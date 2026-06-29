@@ -1,0 +1,33 @@
+name: Test Contract
+
+on:
+  push:
+    paths:
+      - "contract/**"
+  pull_request:
+    paths:
+      - "contract/**"
+
+jobs:
+  test:
+    name: Rust Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: contract
+
+      - name: Install cargo-odra
+        run: cargo install cargo-odra --version "1.4.0" --locked
+
+      - name: Run tests
+        working-directory: contract
+        run: cargo test --features odra-test-env

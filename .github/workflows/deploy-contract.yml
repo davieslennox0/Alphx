@@ -1,0 +1,129 @@
+name: Deploy FXOracle Contract to Casper Testnet
+
+on:
+  workflow_dispatch:
+    inputs:
+      network:
+        description: "Target network"
+        required: true
+        default: "testnet"
+        type: choice
+        options:
+          - testnet
+          - mainnet
+
+env:
+  CASPER_NODE_URL: https://rpc.testnet.casperlabs.io
+  CARGO_ODRA_VERSION: "1.4.0"
+
+jobs:
+  build-and-deploy:
+    name: Build WASM & Deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable + wasm32 target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: contract
+
+      - name: Install cargo-odra
+        run: cargo install cargo-odra --version ${{ env.CARGO_ODRA_VERSION }} --locked
+
+      - name: Build contract WASM
+        working-directory: contract
+        run: cargo odra build -b casper
+
+      - name: Verify WASM exists
+        working-directory: contract
+        run: |
+          ls -lh wasm/
+          echo "WASM_PATH=$(ls wasm/*.wasm | head -1)" >> $GITHUB_ENV
+
+      - name: Install casper-client
+        run: |
+          wget -q https://github.com/casper-ecosystem/casper-client-rs/releases/download/v2.0.0/casper-client-v2.0.0-ubuntu-20.04.tar.gz
+          tar -xzf casper-client-v2.0.0-ubuntu-20.04.tar.gz
+          chmod +x casper-client
+          sudo mv casper-client /usr/local/bin/
+
+      - name: Deploy to Casper Testnet
+        id: deploy
+        env:
+          SECRET_KEY: ${{ secrets.ORACLE_WALLET_SECRET_KEY }}
+        run: |
+          # Write secret key to temp file
+          echo "$SECRET_KEY" > /tmp/secret_key.pem
+
+          # Deploy the contract
+          DEPLOY_HASH=$(casper-client put-deploy \
+            --node-address $CASPER_NODE_URL \
+            --chain-name casper-test \
+            --secret-key /tmp/secret_key.pem \
+            --session-path ${{ env.WASM_PATH }} \
+            --session-arg "named-key-convention:u8='1'" \
+            --payment-amount 50000000000 \
+            2>&1 | grep -oP '"deploy_hash":"\K[^"]+')
+
+          echo "DEPLOY_HASH=$DEPLOY_HASH" >> $GITHUB_ENV
+          echo "deploy_hash=$DEPLOY_HASH" >> $GITHUB_OUTPUT
+          echo "Deploy hash: $DEPLOY_HASH"
+
+          rm -f /tmp/secret_key.pem
+
+      - name: Wait for deploy finality
+        run: |
+          echo "Waiting 60s for deploy to finalize..."
+          sleep 60
+
+      - name: Get contract hash
+        id: contract
+        run: |
+          PUBLIC_KEY="${{ secrets.ORACLE_WALLET_PUBLIC_KEY }}"
+
+          CONTRACT_HASH=$(casper-client query-global-state \
+            --node-address $CASPER_NODE_URL \
+            --state-root-hash $(casper-client get-state-root-hash --node-address $CASPER_NODE_URL | grep -oP '"state_root_hash":"\K[^"]+') \
+            --key $PUBLIC_KEY \
+            2>&1 | python3 -c "
+          import json, sys
+          data = json.load(sys.stdin)
+          named_keys = data.get('result', {}).get('stored_value', {}).get('Account', {}).get('named_keys', [])
+          for nk in named_keys:
+              if 'alphx' in nk['name'].lower() or 'oracle' in nk['name'].lower() or 'fx' in nk['name'].lower():
+                  print(nk['key'])
+                  break
+          " 2>/dev/null || echo "")
+
+          echo "contract_hash=$CONTRACT_HASH" >> $GITHUB_OUTPUT
+          echo "Contract hash: $CONTRACT_HASH"
+
+      - name: Output results
+        run: |
+          echo ""
+          echo "==============================="
+          echo "  ALPHX CONTRACT DEPLOYED"
+          echo "==============================="
+          echo "  Deploy hash : ${{ steps.deploy.outputs.deploy_hash }}"
+          echo "  Contract    : ${{ steps.contract.outputs.contract_hash }}"
+          echo "  Explorer    : https://testnet.cspr.live/deploy/${{ steps.deploy.outputs.deploy_hash }}"
+          echo "==============================="
+          echo ""
+          echo "Add to your .env:"
+          echo "ORACLE_CONTRACT_HASH=${{ steps.contract.outputs.contract_hash }}"
+
+      - name: Upload WASM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: alphx-oracle-wasm
+          path: contract/wasm/*.wasm
+          retention-days: 30

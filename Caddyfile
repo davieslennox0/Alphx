@@ -1,0 +1,21 @@
+alphx.xyz {
+  # API backend
+  handle /fx/* {
+    reverse_proxy localhost:8400
+  }
+  handle /agent/* {
+    reverse_proxy localhost:8400
+  }
+  handle /health {
+    reverse_proxy localhost:8400
+  }
+
+  # Frontend (built static)
+  handle {
+    root * /root/alphx/frontend/dist
+    try_files {path} /index.html
+    file_server
+  }
+
+  encode gzip
+}

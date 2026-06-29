@@ -1,0 +1,32 @@
+[package]
+name = "alphx-oracle"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "alphx_oracle"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+odra = { version = "1.4.0", default-features = false }
+casper-types = "4.0.1"
+
+[features]
+default = []
+odra-casper-livenet-env = ["odra/casper-livenet-env"]
+odra-test-env = ["odra/test-env"]
+
+[[bin]]
+name = "alphx_oracle_build_contract"
+path = "src/bin/build_contract.rs"
+required-features = ["odra-casper-livenet-env"]
+
+[[bin]]
+name = "alphx_oracle_build_schema"
+path = "src/bin/build_schema.rs"
+required-features = ["odra-test-env"]
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "z"

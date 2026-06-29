@@ -1,0 +1,10 @@
+.env
+*.db
+__pycache__/
+*.pyc
+*.pyo
+node_modules/
+frontend/dist/
+contract/target/
+contract/wasm/
+.DS_Store
