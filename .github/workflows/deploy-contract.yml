@@ -75,7 +75,7 @@ jobs:
             deploy.sign(privateKey);
 
             const result = await rpcClient.putDeploy(deploy);
-            const hash = result.deployHash;
+            const hash = result.deployHash.toHex();
 
             console.log(`Deploy hash: ${hash}`);
             fs.appendFileSync(process.env.GITHUB_OUTPUT, `deploy_hash=${hash}\n`);
@@ -100,10 +100,10 @@ jobs:
             const rpcClient = new RpcClient(new HttpHandler(process.env.CASPER_NODE_URL));
 
             try {
-              const stateRoot = (await rpcClient.getLatestStateRootHash()).stateRootHash;
+              const stateRoot = (await rpcClient.getStateRootHashLatest()).stateRootHash;
               const ACCOUNT_HASH = "account-hash-9383e3e17e9c20f19be6316b7cf952d37a6314975a7637cef8abca5f73413b06";
-              const resp = await rpcClient.getBlockState(stateRoot, ACCOUNT_HASH, []);
-              const namedKeys = resp?.Account?.namedKeys || [];
+              const resp = await rpcClient.getStateItem(stateRoot, ACCOUNT_HASH, []);
+              const namedKeys = resp?.Account?.namedKeys || resp?.storedValue?.Account?.namedKeys || [];
               let contractHash = "";
               for (const nk of namedKeys) {
                 const n = (nk.name || nk.Name || "").toLowerCase();
