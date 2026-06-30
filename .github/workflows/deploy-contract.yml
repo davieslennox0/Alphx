@@ -46,13 +46,12 @@ jobs:
       - name: Install cargo-odra
         run: cargo install cargo-odra --version 0.1.7 --locked
 
-      - name: Check cargo-odra flags
-        working-directory: contract
-        run: cargo odra build --help || true
-
       - name: Build WASM (no bulk-memory for Casper 2.0)
         working-directory: contract
-        run: cargo odra build
+        run: |
+          # cargo-odra saves the WASM before running wasm-opt, so ignore wasm-opt errors
+          cargo odra build || true
+          test -f wasm/FXOracle.wasm || (echo "WASM not found!" && exit 1)
 
       - name: Verify WASM
         run: |
