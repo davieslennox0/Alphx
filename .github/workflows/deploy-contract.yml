@@ -29,8 +29,8 @@ jobs:
       - name: Verify WASM exists
         run: ls -lh contract/wasm/FXOracle.wasm
 
-      - name: Install casper-js-sdk
-        run: npm install casper-js-sdk@2.15.4
+      - name: Install casper-js-sdk v5
+        run: npm install casper-js-sdk@5.0.12
 
       - name: Deploy to Casper Testnet
         id: deploy
@@ -41,32 +41,44 @@ jobs:
           chmod 600 /tmp/secret_key.pem
 
           node << 'JSEOF'
-          const { CasperClient, DeployUtil, Keys, RuntimeArgs } = require('casper-js-sdk');
+          const {
+            Deploy, DeployHeader, ExecutableDeployItem,
+            PrivateKey, KeyAlgorithm, RpcClient, HttpHandler
+          } = require('casper-js-sdk');
           const fs = require('fs');
 
           const NODE_URL = process.env.CASPER_NODE_URL;
-          const CHAIN   = process.env.CHAIN_NAME;
+          const CHAIN    = process.env.CHAIN_NAME;
 
           async function main() {
-            const client  = new CasperClient(NODE_URL);
-            const keyPair = Keys.Ed25519.loadKeyPairFromPrivateFile('/tmp/secret_key.pem');
-            const wasm    = fs.readFileSync('contract/wasm/FXOracle.wasm');
+            const rpcHandler = new HttpHandler(NODE_URL);
+            const rpcClient  = new RpcClient(rpcHandler);
 
-            const params  = new DeployUtil.DeployParams(keyPair.publicKey, CHAIN, 1, 1800000);
-            const session = DeployUtil.ExecutableDeployItem.newModuleBytes(
-              Uint8Array.from(wasm),
-              RuntimeArgs.fromMap({})
+            const privateKey = await PrivateKey.fromPem(
+              fs.readFileSync('/tmp/secret_key.pem', 'utf8'),
+              KeyAlgorithm.ED25519
             );
-            const payment = DeployUtil.standardPayment(50_000_000_000);
 
-            const deploy = DeployUtil.makeDeploy(params, session, payment);
-            const signed = DeployUtil.signDeploy(deploy, keyPair);
+            const wasm = fs.readFileSync('contract/wasm/FXOracle.wasm');
 
-            const hash = await client.putDeploy(signed);
+            const session = ExecutableDeployItem.newModuleBytes(
+              new Uint8Array(wasm),
+              new Map()
+            );
+            const payment = ExecutableDeployItem.standardPayment('100000000000');
+
+            const header = DeployHeader.default();
+            header.account   = privateKey.publicKey;
+            header.chainName = CHAIN;
+
+            const deploy = Deploy.makeDeploy(header, payment, session);
+            deploy.sign(privateKey);
+
+            const result = await rpcClient.putDeploy(deploy);
+            const hash = result.deployHash;
+
             console.log(`Deploy hash: ${hash}`);
-
-            const out = process.env.GITHUB_OUTPUT;
-            fs.appendFileSync(out, `deploy_hash=${hash}\n`);
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `deploy_hash=${hash}\n`);
           }
 
           main().catch(e => { console.error(e); process.exit(1); });
@@ -75,36 +87,41 @@ jobs:
           rm -f /tmp/secret_key.pem
 
       - name: Wait for finality
-        run: sleep 60
+        run: sleep 90
 
       - name: Get contract hash
         id: contract
         run: |
           node << 'JSEOF'
-          const { CasperClient } = require('casper-js-sdk');
+          const { RpcClient, HttpHandler } = require('casper-js-sdk');
           const fs = require('fs');
 
-          const NODE_URL = process.env.CASPER_NODE_URL;
-          const PUB_KEY  = "019bec4eb56ae4a5d4798d5de6996afa5541a6ae94b0e889351d7ed5ae359f5a74";
-
           async function main() {
-            const client    = new CasperClient(NODE_URL);
-            const stateRoot = await client.nodeClient.getStateRootHash();
-            const account   = await client.nodeClient.getBlockState(stateRoot, `account-hash-9383e3e17e9c20f19be6316b7cf952d37a6314975a7637cef8abca5f73413b06`, []);
-            const namedKeys = account?.Account?.namedKeys || [];
-            let contractHash = "";
-            for (const nk of namedKeys) {
-              const n = nk.name.toLowerCase();
-              if (n.includes("alphx") || n.includes("oracle") || n.includes("fx")) {
-                contractHash = nk.key;
-                break;
+            const rpcClient = new RpcClient(new HttpHandler(process.env.CASPER_NODE_URL));
+
+            try {
+              const stateRoot = (await rpcClient.getLatestStateRootHash()).stateRootHash;
+              const ACCOUNT_HASH = "account-hash-9383e3e17e9c20f19be6316b7cf952d37a6314975a7637cef8abca5f73413b06";
+              const resp = await rpcClient.getBlockState(stateRoot, ACCOUNT_HASH, []);
+              const namedKeys = resp?.Account?.namedKeys || [];
+              let contractHash = "";
+              for (const nk of namedKeys) {
+                const n = (nk.name || nk.Name || "").toLowerCase();
+                if (n.includes("alphx") || n.includes("oracle") || n.includes("fx")) {
+                  contractHash = nk.key || nk.Key || "";
+                  break;
+                }
               }
+              console.log(`Named keys found: ${namedKeys.length}`);
+              if (namedKeys.length) console.log(JSON.stringify(namedKeys.slice(0,5)));
+              console.log(`Contract hash: ${contractHash}`);
+              fs.appendFileSync(process.env.GITHUB_OUTPUT, `contract_hash=${contractHash}\n`);
+            } catch(e) {
+              console.error("Could not get contract hash:", e.message);
             }
-            console.log(`Contract hash: ${contractHash}`);
-            fs.appendFileSync(process.env.GITHUB_OUTPUT, `contract_hash=${contractHash}\n`);
           }
 
-          main().catch(e => { console.error("Could not get contract hash:", e.message); });
+          main().catch(e => console.error(e));
           JSEOF
 
       - name: Output results
