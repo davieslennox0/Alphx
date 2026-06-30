@@ -42,8 +42,8 @@ jobs:
 
           node << 'JSEOF'
           const {
-            Deploy, DeployHeader, ExecutableDeployItem,
-            PrivateKey, KeyAlgorithm, RpcClient, HttpHandler
+            Deploy, DeployHeader, ExecutableDeployItem, Args,
+            PrivateKey, PublicKey, KeyAlgorithm, RpcClient, HttpHandler
           } = require('casper-js-sdk');
           const fs = require('fs');
 
@@ -63,7 +63,7 @@ jobs:
 
             const session = ExecutableDeployItem.newModuleBytes(
               new Uint8Array(wasm),
-              new Map()
+              Args.fromMap({})
             );
             const payment = ExecutableDeployItem.standardPayment('100000000000');
 
