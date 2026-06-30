@@ -42,8 +42,8 @@ jobs:
 
           node << 'JSEOF'
           const {
-            Deploy, DeployHeader, ExecutableDeployItem, Args,
-            PrivateKey, PublicKey, KeyAlgorithm, RpcClient, HttpHandler
+            SessionBuilder, Args,
+            PrivateKey, KeyAlgorithm, RpcClient, HttpHandler
           } = require('casper-js-sdk');
           const fs = require('fs');
 
@@ -61,21 +61,22 @@ jobs:
 
             const wasm = fs.readFileSync('contract/wasm/FXOracle.wasm');
 
-            const session = ExecutableDeployItem.newModuleBytes(
-              new Uint8Array(wasm),
-              Args.fromMap({})
-            );
-            const payment = ExecutableDeployItem.standardPayment('100000000000');
+            // Build a true Casper 2.0 V1 transaction (not legacy deploy)
+            const transaction = new SessionBuilder()
+              .from(privateKey.publicKey)
+              .wasm(new Uint8Array(wasm))
+              .installOrUpgrade()
+              .runtimeArgs(Args.fromMap({}))
+              .chainName(CHAIN)
+              .payment(100_000_000_000)
+              .build();
 
-            const header = DeployHeader.default();
-            header.account   = privateKey.publicKey;
-            header.chainName = CHAIN;
+            transaction.sign(privateKey);
 
-            const deploy = Deploy.makeDeploy(header, payment, session);
-            deploy.sign(privateKey);
-
-            const result = await rpcClient.putDeploy(deploy);
-            const hash = result.deployHash.toHex();
+            const result = await rpcClient.putTransaction(transaction);
+            const hash = result.transactionHash.toHex
+              ? result.transactionHash.toHex()
+              : JSON.stringify(result.transactionHash);
 
             console.log(`Deploy hash: ${hash}`);
             fs.appendFileSync(process.env.GITHUB_OUTPUT, `deploy_hash=${hash}\n`);
