@@ -40,7 +40,7 @@ export default function App() {
           <div className="flex items-center justify-between mb-2">
             <div>
               <h1 className="text-xl font-bold text-zinc-100 tracking-tight">
-                ALPHX
+                ALPHXC
               </h1>
               <p className="text-xs text-zinc-500 mt-0.5">
                 Autonomous Cross-Border FX Settlement on Casper Network

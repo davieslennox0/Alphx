@@ -1,4 +1,4 @@
-alphx.xyz {
+alphxc.duckdns.org {
   # API backend
   handle /fx/* {
     reverse_proxy localhost:8400

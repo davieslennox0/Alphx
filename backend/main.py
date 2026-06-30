@@ -1,4 +1,4 @@
-"""ALPHX FastAPI backend — FX rates, agent feeds, x402-gated endpoints."""
+"""ALPHXC FastAPI backend — FX rates, agent feeds, x402-gated endpoints."""
 import asyncio
 import json
 import time
@@ -24,7 +24,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="ALPHX", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="ALPHXC", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

@@ -1,6 +1,6 @@
-# ALPHX — Autonomous Cross-Border FX Settlement on Casper
+# ALPHXC — Autonomous Cross-Border FX Settlement on Casper
 
-ALPHX is a B2B autonomous FX settlement agent that monitors 400+ real forex pairs, identifies profitable settlement windows against on-chain pool rates, and executes swaps on Casper Network — with Groq LLM as the decision brain.
+ALPHXC is a B2B autonomous FX settlement agent that monitors 400+ real forex pairs, identifies profitable settlement windows against on-chain pool rates, and executes swaps on Casper Network — with Groq LLM as the decision brain.
 
 **Buildathon tracks:** Agentic AI · DeFi & Payments · RWA Tokenization
 
@@ -10,7 +10,7 @@ ALPHX is a B2B autonomous FX settlement agent that monitors 400+ real forex pair
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        ALPHX SYSTEM                             │
+│                        ALPHXC SYSTEM                             │
 │                                                                 │
 │  ┌─────────────────┐    ┌─────────────────┐                    │
 │  │  yahoo_agent.py │    │twelvedata_agent │                    │
@@ -41,7 +41,7 @@ ALPHX is a B2B autonomous FX settlement agent that monitors 400+ real forex pair
 │                           │                                     │
 │              ┌────────────▼─────────────┐                      │
 │              │   React/Vite Dashboard   │                      │
-│              │   (Caddy → alphx.xyz)    │                      │
+│              │   (Caddy → alphxc.duckdns.org)  │                      │
 │              └──────────────────────────┘                      │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -50,7 +50,7 @@ ALPHX is a B2B autonomous FX settlement agent that monitors 400+ real forex pair
 
 ## Track Alignment
 
-| Track | How ALPHX qualifies |
+| Track | How ALPHXC qualifies |
 |---|---|
 | **Agentic AI** | Three autonomous agents run continuously; Groq LLM makes structured SWAP/HOLD decisions |
 | **DeFi & Payments** | x402 micropayment gating on API; autonomous swap execution via CSPR.trade |
@@ -152,22 +152,22 @@ GET /agent/swaps     # SSE
 ```bash
 # Single rate — costs 0.001 CSPR
 curl -H "X-PAYMENT-SIGNATURE: <deploy_hash>" \
-  https://alphx.xyz/fx/rate/EUR/USD
+  https://alphxc.duckdns.org/fx/rate/EUR/USD
 
 # Batch rates — costs 0.001 CSPR
 curl -H "X-PAYMENT-SIGNATURE: <deploy_hash>" \
-  "https://alphx.xyz/fx/rates/batch?pairs=EUR/USD,GBP/USD"
+  "https://alphxc.duckdns.org/fx/rates/batch?pairs=EUR/USD,GBP/USD"
 
 # All rates snapshot — costs 0.01 CSPR
 curl -H "X-PAYMENT-SIGNATURE: <deploy_hash>" \
-  https://alphx.xyz/fx/rates/all
+  https://alphxc.duckdns.org/fx/rates/all
 ```
 
 **x402 payment flow:**
 1. Send CSPR transfer to `ORACLE_WALLET_PUBLIC_KEY` on Casper Testnet
 2. Note the deploy hash
 3. Pass it in `X-PAYMENT-SIGNATURE` header
-4. ALPHX verifies on-chain via CSPR.cloud
+4. ALPHXC verifies on-chain via CSPR.cloud
 
 ---
 
@@ -187,7 +187,7 @@ Every 60 seconds the aggregator:
 
 ## How CSPR.trade MCP Execution Works
 
-ALPHX calls the CSPR.trade MCP server (set `CSPR_TRADE_MCP_URL` in .env):
+ALPHXC calls the CSPR.trade MCP server (set `CSPR_TRADE_MCP_URL` in .env):
 
 ```
 POST /swap  { pair, rate }  → { tx_hash }
@@ -200,7 +200,7 @@ The resulting deploy hash is stored in the `decisions` table and linked to the C
 
 ## Live Dashboard
 
-`https://alphx.xyz`
+`https://alphxc.duckdns.org`
 
 - Left panel: 400+ searchable FX pairs with live rate, spread, source, and freshness indicator
 - Right top: real-time agent activity stream
