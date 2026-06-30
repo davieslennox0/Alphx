@@ -58,6 +58,20 @@ ALPHX is a B2B autonomous FX settlement agent that monitors 400+ real forex pair
 
 ---
 
+## On-Chain Contract Status
+
+The FXOracle smart contract is written in Rust using the [Odra framework](https://github.com/odradev/odra) and compiles to a fully functional WASM (`contract/wasm/FXOracle.wasm`).
+
+**Casper 2.0 VM note:** The Casper Condor 2.x testnet VM currently rejects WASM modules that use [bulk-memory operations](https://github.com/WebAssembly/bulk-memory-operations) (`memory.copy`, `memory.fill`). The Odra/ink! allocator emits these instructions at compile time and they cannot be stripped via `rustflags` alone. Transaction `937b0208568caf834589da3b067a0d697d822603e563eacc2f5c24a2701f440a` confirmed the deploy reached block 8345330 but failed at VM execution with:
+
+```
+Wasm preprocessing error: Deserialization error: Bulk memory operations are not supported
+```
+
+**Workaround deployed:** `contract/minimal/FXOracle_minimal.wat` is a hand-written WebAssembly Text module with zero bulk-memory instructions (171 bytes). It registers the named key `alphx_oracle` on-chain as a placeholder. The GitHub Actions workflow (`deploy-contract.yml`) compiles this WAT and deploys it to the Casper testnet. The full Odra contract is preserved as an audit artifact and will be used as an upgrade once the Casper 2.0 VM gains bulk-memory support.
+
+---
+
 ## Quickstart
 
 ### 1. Clone & configure
@@ -75,15 +89,15 @@ cp .env.example .env
 pip install -r requirements.txt
 ```
 
-### 3. Deploy the Odra contract (Casper Testnet)
+### 3. Deploy the contract (Casper Testnet)
 
 ```bash
-cd contract
-cargo install cargo-odra
-cargo odra build -b casper
-cargo odra deploy -b casper --network testnet
-# Copy the contract hash to ORACLE_CONTRACT_HASH in .env
-cd ..
+# Via GitHub Actions (recommended — handles WAT compilation automatically)
+# Go to Actions → "Deploy FXOracle Contract" → Run workflow → testnet
+
+# Or compile the minimal WAT locally:
+wasm-as contract/minimal/FXOracle_minimal.wat -o contract/wasm/FXOracle_deploy.wasm
+# Then deploy via casper-js-sdk (see .github/workflows/deploy-contract.yml)
 ```
 
 ### 4. Start with pm2
@@ -191,3 +205,18 @@ The resulting deploy hash is stored in the `decisions` table and linked to the C
 - Left panel: 400+ searchable FX pairs with live rate, spread, source, and freshness indicator
 - Right top: real-time agent activity stream
 - Right bottom: swap execution feed with Casper explorer links
+
+---
+
+## Contract Source
+
+The full FXOracle contract source is in `contract/src/oracle.rs`. Entry points:
+
+| Entry point | Description |
+|---|---|
+| `init()` | Called on install; sets owner to deployer |
+| `publish_rate(pair, rate, bid, ask)` | Owner-only; stores a CLType-serialized `RateEntry` |
+| `get_rate(pair)` | Returns `Option<RateEntry>` for a pair |
+| `transfer_ownership(new_owner)` | Owner-only |
+
+The `RateEntry` struct stores `rate`, `bid`, `ask` as `u64` (scaled ×10⁶) and `timestamp` as block time.

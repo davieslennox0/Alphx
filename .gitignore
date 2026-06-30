@@ -8,3 +8,5 @@ frontend/dist/
 contract/target/
 contract/wasm/
 .DS_Store
+wallet/
+frontend/package-lock.json
