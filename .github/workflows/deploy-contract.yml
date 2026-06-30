@@ -13,7 +13,7 @@ on:
           - mainnet
 
 env:
-  CASPER_NODE_URL: https://rpc.testnet.casperlabs.io/rpc
+  CASPER_NODE_URL: https://node.testnet.casper.network/rpc
   CHAIN_NAME: casper-test
 
 jobs:
