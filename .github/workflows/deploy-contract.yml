@@ -13,7 +13,7 @@ on:
           - mainnet
 
 env:
-  CASPER_NODE_URL: https://rpc.testnet.casperlabs.io
+  CASPER_NODE_URL: https://rpc.testnet.casperlabs.io/rpc
   CHAIN_NAME: casper-test
 
 jobs:
@@ -29,8 +29,8 @@ jobs:
       - name: Verify WASM exists
         run: ls -lh contract/wasm/FXOracle.wasm
 
-      - name: Install pycspr
-        run: pip install pycspr==2.0.0
+      - name: Install casper-js-sdk
+        run: npm install casper-js-sdk@2.15.4
 
       - name: Deploy to Casper Testnet
         id: deploy
@@ -40,51 +40,37 @@ jobs:
           echo "$SECRET_KEY" > /tmp/secret_key.pem
           chmod 600 /tmp/secret_key.pem
 
-          python3 << 'PYEOF'
-          import pycspr
-          import pycspr.crypto as crypto
-          import json, os, time
+          node << 'JSEOF'
+          const { CasperClient, DeployUtil, Keys, RuntimeArgs } = require('casper-js-sdk');
+          const fs = require('fs');
 
-          node_url = os.environ["CASPER_NODE_URL"]
-          chain = os.environ["CHAIN_NAME"]
-          host, port = node_url.replace("https://","").replace("http://","").split(":")[0], 7777
+          const NODE_URL = process.env.CASPER_NODE_URL;
+          const CHAIN   = process.env.CHAIN_NAME;
 
-          client = pycspr.NodeClient(pycspr.NodeConnection(host=host, port=port))
+          async function main() {
+            const client  = new CasperClient(NODE_URL);
+            const keyPair = Keys.Ed25519.loadKeyPairFromPrivateFile('/tmp/secret_key.pem');
+            const wasm    = fs.readFileSync('contract/wasm/FXOracle.wasm');
 
-          # Load key
-          key_pair = crypto.KeyPair.from_pem_file(
-              "/tmp/secret_key.pem",
-              crypto.KeyAlgorithm.ED25519
-          )
+            const params  = new DeployUtil.DeployParams(keyPair.publicKey, CHAIN, 1, 1800000);
+            const session = DeployUtil.ExecutableDeployItem.newModuleBytes(
+              Uint8Array.from(wasm),
+              RuntimeArgs.fromMap({})
+            );
+            const payment = DeployUtil.standardPayment(50_000_000_000);
 
-          # Read WASM
-          with open("contract/wasm/FXOracle.wasm", "rb") as f:
-              wasm_bytes = f.read()
+            const deploy = DeployUtil.makeDeploy(params, session, payment);
+            const signed = DeployUtil.signDeploy(deploy, keyPair);
 
-          # Build deploy
-          deploy = pycspr.create_deploy(
-              pycspr.DeployParameters(
-                  account_public_key=key_pair.public_key,
-                  chain_name=chain,
-                  gas_price=1,
-                  timestamp=pycspr.timestamp(),
-                  ttl="30m"
-              ),
-              pycspr.ModuleBytes(
-                  module_bytes=wasm_bytes,
-                  args=[]
-              ),
-              pycspr.StandardPayment(amount=50_000_000_000)
-          )
+            const hash = await client.putDeploy(signed);
+            console.log(`Deploy hash: ${hash}`);
 
-          # Sign and dispatch
-          deploy.approve(key_pair)
-          deploy_hash = client.send_deploy(deploy)
+            const out = process.env.GITHUB_OUTPUT;
+            fs.appendFileSync(out, `deploy_hash=${hash}\n`);
+          }
 
-          print(f"DEPLOY_HASH={deploy_hash}")
-          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
-              f.write(f"deploy_hash={deploy_hash}\n")
-          PYEOF
+          main().catch(e => { console.error(e); process.exit(1); });
+          JSEOF
 
           rm -f /tmp/secret_key.pem
 
@@ -94,31 +80,32 @@ jobs:
       - name: Get contract hash
         id: contract
         run: |
-          python3 << 'PYEOF'
-          import pycspr, json, os
+          node << 'JSEOF'
+          const { CasperClient } = require('casper-js-sdk');
+          const fs = require('fs');
 
-          node_url = os.environ["CASPER_NODE_URL"]
-          host = node_url.replace("https://","").replace("http://","")
-          client = pycspr.NodeClient(pycspr.NodeConnection(host=host, port=7777))
+          const NODE_URL = process.env.CASPER_NODE_URL;
+          const PUB_KEY  = "019bec4eb56ae4a5d4798d5de6996afa5541a6ae94b0e889351d7ed5ae359f5a74";
 
-          pub_key = "019bec4eb56ae4a5d4798d5de6996afa5541a6ae94b0e889351d7ed5ae359f5a74"
+          async function main() {
+            const client    = new CasperClient(NODE_URL);
+            const stateRoot = await client.nodeClient.getStateRootHash();
+            const account   = await client.nodeClient.getBlockState(stateRoot, `account-hash-9383e3e17e9c20f19be6316b7cf952d37a6314975a7637cef8abca5f73413b06`, []);
+            const namedKeys = account?.Account?.namedKeys || [];
+            let contractHash = "";
+            for (const nk of namedKeys) {
+              const n = nk.name.toLowerCase();
+              if (n.includes("alphx") || n.includes("oracle") || n.includes("fx")) {
+                contractHash = nk.key;
+                break;
+              }
+            }
+            console.log(`Contract hash: ${contractHash}`);
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `contract_hash=${contractHash}\n`);
+          }
 
-          try:
-              state_root = client.get_state_root_hash()
-              account = client.get_account(pub_key, state_root)
-              named_keys = account.get("named_keys", [])
-              contract_hash = ""
-              for nk in named_keys:
-                  name = nk["name"].lower()
-                  if "alphx" in name or "oracle" in name or "fx" in name:
-                      contract_hash = nk["key"]
-                      break
-              print(f"Contract hash: {contract_hash}")
-              with open(os.environ["GITHUB_OUTPUT"], "a") as f:
-                  f.write(f"contract_hash={contract_hash}\n")
-          except Exception as e:
-              print(f"Could not get contract hash: {e}")
-          PYEOF
+          main().catch(e => { console.error("Could not get contract hash:", e.message); });
+          JSEOF
 
       - name: Output results
         run: |
