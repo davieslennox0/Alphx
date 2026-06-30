@@ -46,9 +46,13 @@ jobs:
       - name: Install cargo-odra
         run: cargo install cargo-odra --version 0.1.7 --locked
 
+      - name: Check cargo-odra flags
+        working-directory: contract
+        run: cargo odra build --help || true
+
       - name: Build WASM (no bulk-memory for Casper 2.0)
         working-directory: contract
-        run: cargo odra build -b casper
+        run: cargo odra build
 
       - name: Verify WASM
         run: |
