@@ -14,6 +14,7 @@ on:
 
 env:
   CASPER_NODE_URL: https://rpc.testnet.casperlabs.io
+  CHAIN_NAME: casper-test
 
 jobs:
   deploy:
@@ -26,17 +27,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Verify WASM exists
-        run: |
-          ls -lh contract/wasm/
-          echo "WASM_PATH=contract/wasm/FXOracle.wasm" >> $GITHUB_ENV
+        run: ls -lh contract/wasm/FXOracle.wasm
 
-      - name: Install casper-client
-        run: |
-          wget -q https://github.com/casper-ecosystem/casper-client-rs/releases/download/v2.0.0/casper-client-v2.0.0-ubuntu-20.04.tar.gz
-          tar -xzf casper-client-v2.0.0-ubuntu-20.04.tar.gz
-          chmod +x casper-client
-          sudo mv casper-client /usr/local/bin/
-          casper-client --version
+      - name: Install pycspr
+        run: pip install pycspr==2.0.0
 
       - name: Deploy to Casper Testnet
         id: deploy
@@ -46,25 +40,51 @@ jobs:
           echo "$SECRET_KEY" > /tmp/secret_key.pem
           chmod 600 /tmp/secret_key.pem
 
-          RESULT=$(casper-client put-deploy \
-            --node-address $CASPER_NODE_URL \
-            --chain-name casper-test \
-            --secret-key /tmp/secret_key.pem \
-            --session-path ${{ env.WASM_PATH }} \
-            --payment-amount 50000000000 \
-            2>&1)
+          python3 << 'PYEOF'
+          import pycspr
+          import pycspr.crypto as crypto
+          import json, os, time
 
-          echo "Raw result: $RESULT"
+          node_url = os.environ["CASPER_NODE_URL"]
+          chain = os.environ["CHAIN_NAME"]
+          host, port = node_url.replace("https://","").replace("http://","").split(":")[0], 7777
 
-          DEPLOY_HASH=$(echo "$RESULT" | python3 -c "
-          import sys, json
-          d = json.load(sys.stdin)
-          print(d['result']['deploy_hash'])
-          " 2>/dev/null || echo "$RESULT" | grep -oP '"deploy_hash":"\K[^"]+' || true)
+          client = pycspr.NodeClient(pycspr.NodeConnection(host=host, port=port))
 
-          echo "DEPLOY_HASH=$DEPLOY_HASH" >> $GITHUB_ENV
-          echo "deploy_hash=$DEPLOY_HASH" >> $GITHUB_OUTPUT
-          echo "Deploy hash: $DEPLOY_HASH"
+          # Load key
+          key_pair = crypto.KeyPair.from_pem_file(
+              "/tmp/secret_key.pem",
+              crypto.KeyAlgorithm.ED25519
+          )
+
+          # Read WASM
+          with open("contract/wasm/FXOracle.wasm", "rb") as f:
+              wasm_bytes = f.read()
+
+          # Build deploy
+          deploy = pycspr.create_deploy(
+              pycspr.DeployParameters(
+                  account_public_key=key_pair.public_key,
+                  chain_name=chain,
+                  gas_price=1,
+                  timestamp=pycspr.timestamp(),
+                  ttl="30m"
+              ),
+              pycspr.ModuleBytes(
+                  module_bytes=wasm_bytes,
+                  args=[]
+              ),
+              pycspr.StandardPayment(amount=50_000_000_000)
+          )
+
+          # Sign and dispatch
+          deploy.approve(key_pair)
+          deploy_hash = client.send_deploy(deploy)
+
+          print(f"DEPLOY_HASH={deploy_hash}")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"deploy_hash={deploy_hash}\n")
+          PYEOF
 
           rm -f /tmp/secret_key.pem
 
@@ -74,28 +94,31 @@ jobs:
       - name: Get contract hash
         id: contract
         run: |
-          PUBLIC_KEY="019bec4eb56ae4a5d4798d5de6996afa5541a6ae94b0e889351d7ed5ae359f5a74"
-          STATE_ROOT=$(casper-client get-state-root-hash \
-            --node-address $CASPER_NODE_URL \
-            2>&1 | python3 -c "import sys,json; print(json.load(sys.stdin)['result']['state_root_hash'])")
+          python3 << 'PYEOF'
+          import pycspr, json, os
 
-          CONTRACT_HASH=$(casper-client query-global-state \
-            --node-address $CASPER_NODE_URL \
-            --state-root-hash "$STATE_ROOT" \
-            --key "$PUBLIC_KEY" \
-            2>&1 | python3 -c "
-          import json, sys
-          data = json.load(sys.stdin)
-          named_keys = data.get('result', {}).get('stored_value', {}).get('Account', {}).get('named_keys', [])
-          for nk in named_keys:
-              name = nk['name'].lower()
-              if 'alphx' in name or 'oracle' in name or 'fx' in name:
-                  print(nk['key'])
-                  break
-          " 2>/dev/null || echo "")
+          node_url = os.environ["CASPER_NODE_URL"]
+          host = node_url.replace("https://","").replace("http://","")
+          client = pycspr.NodeClient(pycspr.NodeConnection(host=host, port=7777))
 
-          echo "contract_hash=$CONTRACT_HASH" >> $GITHUB_OUTPUT
-          echo "Contract hash: $CONTRACT_HASH"
+          pub_key = "019bec4eb56ae4a5d4798d5de6996afa5541a6ae94b0e889351d7ed5ae359f5a74"
+
+          try:
+              state_root = client.get_state_root_hash()
+              account = client.get_account(pub_key, state_root)
+              named_keys = account.get("named_keys", [])
+              contract_hash = ""
+              for nk in named_keys:
+                  name = nk["name"].lower()
+                  if "alphx" in name or "oracle" in name or "fx" in name:
+                      contract_hash = nk["key"]
+                      break
+              print(f"Contract hash: {contract_hash}")
+              with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+                  f.write(f"contract_hash={contract_hash}\n")
+          except Exception as e:
+              print(f"Could not get contract hash: {e}")
+          PYEOF
 
       - name: Output results
         run: |
