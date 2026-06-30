@@ -14,40 +14,21 @@ on:
 
 env:
   CASPER_NODE_URL: https://rpc.testnet.casperlabs.io
-  CARGO_ODRA_VERSION: "1.4.0"
 
 jobs:
-  build-and-deploy:
-    name: Build WASM & Deploy
+  deploy:
+    name: Deploy Pre-built WASM
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Rust stable + wasm32 target
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-
-      - name: Cache Rust build
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: contract
-
-      - name: Install cargo-odra
-        run: cargo install cargo-odra --version ${{ env.CARGO_ODRA_VERSION }} --locked
-
-      - name: Build contract WASM
-        working-directory: contract
-        run: cargo odra build -b casper
-
       - name: Verify WASM exists
-        working-directory: contract
         run: |
-          ls -lh wasm/
-          echo "WASM_PATH=$(ls wasm/*.wasm | head -1)" >> $GITHUB_ENV
+          ls -lh contract/wasm/
+          echo "WASM_PATH=contract/wasm/FXOracle.wasm" >> $GITHUB_ENV
 
       - name: Install casper-client
         run: |
@@ -55,24 +36,31 @@ jobs:
           tar -xzf casper-client-v2.0.0-ubuntu-20.04.tar.gz
           chmod +x casper-client
           sudo mv casper-client /usr/local/bin/
+          casper-client --version
 
       - name: Deploy to Casper Testnet
         id: deploy
         env:
           SECRET_KEY: ${{ secrets.ORACLE_WALLET_SECRET_KEY }}
         run: |
-          # Write secret key to temp file
           echo "$SECRET_KEY" > /tmp/secret_key.pem
+          chmod 600 /tmp/secret_key.pem
 
-          # Deploy the contract
-          DEPLOY_HASH=$(casper-client put-deploy \
+          RESULT=$(casper-client put-deploy \
             --node-address $CASPER_NODE_URL \
             --chain-name casper-test \
             --secret-key /tmp/secret_key.pem \
             --session-path ${{ env.WASM_PATH }} \
-            --session-arg "named-key-convention:u8='1'" \
             --payment-amount 50000000000 \
-            2>&1 | grep -oP '"deploy_hash":"\K[^"]+')
+            2>&1)
+
+          echo "Raw result: $RESULT"
+
+          DEPLOY_HASH=$(echo "$RESULT" | python3 -c "
+          import sys, json
+          d = json.load(sys.stdin)
+          print(d['result']['deploy_hash'])
+          " 2>/dev/null || echo "$RESULT" | grep -oP '"deploy_hash":"\K[^"]+' || true)
 
           echo "DEPLOY_HASH=$DEPLOY_HASH" >> $GITHUB_ENV
           echo "deploy_hash=$DEPLOY_HASH" >> $GITHUB_OUTPUT
@@ -80,26 +68,28 @@ jobs:
 
           rm -f /tmp/secret_key.pem
 
-      - name: Wait for deploy finality
-        run: |
-          echo "Waiting 60s for deploy to finalize..."
-          sleep 60
+      - name: Wait for finality
+        run: sleep 60
 
       - name: Get contract hash
         id: contract
         run: |
-          PUBLIC_KEY="${{ secrets.ORACLE_WALLET_PUBLIC_KEY }}"
+          PUBLIC_KEY="019bec4eb56ae4a5d4798d5de6996afa5541a6ae94b0e889351d7ed5ae359f5a74"
+          STATE_ROOT=$(casper-client get-state-root-hash \
+            --node-address $CASPER_NODE_URL \
+            2>&1 | python3 -c "import sys,json; print(json.load(sys.stdin)['result']['state_root_hash'])")
 
           CONTRACT_HASH=$(casper-client query-global-state \
             --node-address $CASPER_NODE_URL \
-            --state-root-hash $(casper-client get-state-root-hash --node-address $CASPER_NODE_URL | grep -oP '"state_root_hash":"\K[^"]+') \
-            --key $PUBLIC_KEY \
+            --state-root-hash "$STATE_ROOT" \
+            --key "$PUBLIC_KEY" \
             2>&1 | python3 -c "
           import json, sys
           data = json.load(sys.stdin)
           named_keys = data.get('result', {}).get('stored_value', {}).get('Account', {}).get('named_keys', [])
           for nk in named_keys:
-              if 'alphx' in nk['name'].lower() or 'oracle' in nk['name'].lower() or 'fx' in nk['name'].lower():
+              name = nk['name'].lower()
+              if 'alphx' in name or 'oracle' in name or 'fx' in name:
                   print(nk['key'])
                   break
           " 2>/dev/null || echo "")
@@ -117,8 +107,7 @@ jobs:
           echo "  Contract    : ${{ steps.contract.outputs.contract_hash }}"
           echo "  Explorer    : https://testnet.cspr.live/deploy/${{ steps.deploy.outputs.deploy_hash }}"
           echo "==============================="
-          echo ""
-          echo "Add to your .env:"
+          echo "Add to .env:"
           echo "ORACLE_CONTRACT_HASH=${{ steps.contract.outputs.contract_hash }}"
 
       - name: Upload WASM artifact
