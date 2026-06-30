@@ -17,17 +17,43 @@ env:
   CHAIN_NAME: casper-test
 
 jobs:
-  deploy:
-    name: Deploy Pre-built WASM
+  build-and-deploy:
+    name: Build WASM & Deploy
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Verify WASM exists
-        run: ls -lh contract/wasm/FXOracle.wasm
+      - name: Install Rust nightly + wasm32 target
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install build deps
+        run: sudo apt-get install -y pkg-config libssl-dev binaryen
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-${{ hashFiles('contract/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Install cargo-odra
+        run: cargo install cargo-odra --version 0.1.7 --locked
+
+      - name: Build WASM (no bulk-memory for Casper 2.0)
+        working-directory: contract
+        run: cargo odra build -b casper
+
+      - name: Verify WASM
+        run: |
+          ls -lh contract/wasm/
+          wasm-opt contract/wasm/FXOracle.wasm --print-features 2>&1
 
       - name: Install casper-js-sdk v5
         run: npm install casper-js-sdk@5.0.12
@@ -61,7 +87,6 @@ jobs:
 
             const wasm = fs.readFileSync('contract/wasm/FXOracle.wasm');
 
-            // Build a true Casper 2.0 V1 transaction (not legacy deploy)
             const transaction = new SessionBuilder()
               .from(privateKey.publicKey)
               .wasm(new Uint8Array(wasm))
@@ -99,30 +124,28 @@ jobs:
 
           async function main() {
             const rpcClient = new RpcClient(new HttpHandler(process.env.CASPER_NODE_URL));
-
             try {
               const stateRoot = (await rpcClient.getStateRootHashLatest()).stateRootHash;
               const ACCOUNT_HASH = "account-hash-9383e3e17e9c20f19be6316b7cf952d37a6314975a7637cef8abca5f73413b06";
               const resp = await rpcClient.getStateItem(stateRoot, ACCOUNT_HASH, []);
               const namedKeys = resp?.Account?.namedKeys || resp?.storedValue?.Account?.namedKeys || [];
+              console.log(`Named keys: ${namedKeys.length}`);
+              if (namedKeys.length) console.log(JSON.stringify(namedKeys));
               let contractHash = "";
               for (const nk of namedKeys) {
-                const n = (nk.name || nk.Name || "").toLowerCase();
+                const n = (nk.name || "").toLowerCase();
                 if (n.includes("alphx") || n.includes("oracle") || n.includes("fx")) {
-                  contractHash = nk.key || nk.Key || "";
+                  contractHash = nk.key || "";
                   break;
                 }
               }
-              console.log(`Named keys found: ${namedKeys.length}`);
-              if (namedKeys.length) console.log(JSON.stringify(namedKeys.slice(0,5)));
               console.log(`Contract hash: ${contractHash}`);
               fs.appendFileSync(process.env.GITHUB_OUTPUT, `contract_hash=${contractHash}\n`);
             } catch(e) {
               console.error("Could not get contract hash:", e.message);
             }
           }
-
-          main().catch(e => console.error(e));
+          main().catch(console.error);
           JSEOF
 
       - name: Output results
@@ -131,16 +154,15 @@ jobs:
           echo "==============================="
           echo "  ALPHX CONTRACT DEPLOYED"
           echo "==============================="
-          echo "  Deploy hash : ${{ steps.deploy.outputs.deploy_hash }}"
-          echo "  Contract    : ${{ steps.contract.outputs.contract_hash }}"
-          echo "  Explorer    : https://testnet.cspr.live/deploy/${{ steps.deploy.outputs.deploy_hash }}"
+          echo "  TX hash  : ${{ steps.deploy.outputs.deploy_hash }}"
+          echo "  Contract : ${{ steps.contract.outputs.contract_hash }}"
+          echo "  Explorer : https://testnet.cspr.live/deploy/${{ steps.deploy.outputs.deploy_hash }}"
           echo "==============================="
-          echo "Add to .env:"
           echo "ORACLE_CONTRACT_HASH=${{ steps.contract.outputs.contract_hash }}"
 
       - name: Upload WASM artifact
         uses: actions/upload-artifact@v4
         with:
-          name: alphx-oracle-wasm
+          name: alphx-oracle-wasm-casper2
           path: contract/wasm/*.wasm
           retention-days: 30
