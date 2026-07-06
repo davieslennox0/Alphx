@@ -10,7 +10,7 @@ def _headers() -> dict:
 def get_deploy(deploy_hash: str) -> dict | None:
     try:
         resp = requests.get(
-            f"{CSPR_CLOUD_BASE_URL}/deploys/{deploy_hash}",
+            f"{CSPR_CLOUD_BASE_URL}/transactions/{deploy_hash}",
             headers=_headers(),
             timeout=10,
         )

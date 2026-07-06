@@ -32,39 +32,44 @@ def verify_cspr_payment(tx_hash: str, expected_amount_motes: int) -> bool:
 
     try:
         headers = {"authorization": CSPR_CLOUD_API_KEY}
-        resp = requests.get(
-            f"{CSPR_CLOUD_BASE_URL}/deploys/{tx_hash}",
-            headers=headers,
-            timeout=10,
-        )
-        if resp.status_code != 200:
+        # Casper 2.0 uses /transactions/, fall back to /deploys/ for 1.x
+        for endpoint in [f"transactions/{tx_hash}", f"deploys/{tx_hash}"]:
+            resp = requests.get(
+                f"{CSPR_CLOUD_BASE_URL}/{endpoint}",
+                headers=headers,
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                break
+        else:
             return False
 
         data = resp.json()
-        execution_results = data.get("execution_results", [])
-        if not execution_results:
-            return False
 
-        result = execution_results[0].get("result", {})
-        if result.get("Failure"):
+        # Casper 2.0 transaction shape
+        transfer = (
+            data.get("transaction", {})
+            .get("body", {})
+            .get("args", {})
+        ) or (
+            # Casper 1.x deploy shape
+            data.get("session", {})
+            .get("Transfer", {})
+        )
+
+        # Check execution success
+        execution = data.get("execution_results", [{}])[0].get("result", {})
+        if execution.get("Failure"):
             return False
 
         recipient = (
-            data.get("session", {})
-            .get("Transfer", {})
-            .get("target", "")
+            data.get("transaction", {}).get("body", {}).get("target", "")
+            or transfer.get("target", "")
         )
-        amount_str = (
-            data.get("session", {})
-            .get("Transfer", {})
-            .get("amount", "0")
-        )
+        amount_str = str(transfer.get("amount", "0"))
         amount = int(amount_str) if amount_str.isdigit() else 0
 
-        if (
-            recipient.lower() == ORACLE_WALLET_PUBLIC_KEY.lower()
-            and amount >= expected_amount_motes
-        ):
+        if recipient.lower() == ORACLE_WALLET_PUBLIC_KEY.lower() and amount >= expected_amount_motes:
             _clean_cache()
             _verified_hashes[cache_key] = time.time()
             return True
