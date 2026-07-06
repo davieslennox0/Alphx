@@ -20,8 +20,8 @@ from backend.db import (
 from backend.config import CASPER_NODE_URL
 
 AGENT_ID     = "settler"
-POLL         = 10   # check every 10 seconds
-SETTLE_AFTER = 20   # settle any open request after this many seconds
+POLL         = 35   # one settlement every 35 seconds
+SETTLE_AFTER = 35   # settle any open request after this many seconds
 
 SETTLE_TX_SCRIPT = "/root/alphx/backend/casper_helper/settle_tx.cjs"
 MANIFEST_PATH    = "/root/alphx/wallet/agents/manifest.json"
@@ -162,9 +162,7 @@ def run():
             due       = [r for r in open_reqs if now - r["timestamp"] >= SETTLE_AFTER]
 
             if due:
-                for req in due:
-                    settle_request(req)
-                    time.sleep(2)
+                settle_request(due[0])  # one per cycle, oldest first
             else:
                 if open_reqs:
                     oldest_age = now - min(r["timestamp"] for r in open_reqs)
