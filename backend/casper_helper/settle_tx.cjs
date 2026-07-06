@@ -39,9 +39,8 @@ const fs = require('fs');
 // Derived from sha256("alphxc-settlement-pool") with Casper Ed25519 prefix.
 const SETTLEMENT_POOL_PK = '019cefe89868658b7f490a4b732086bce761d89eb75714eeb08fb035a5c0f9afa6';
 
-// Minimum transfer: 2_500_000_000 motes (2.5 CSPR) — Casper network minimum.
-// We scale the FX notional to motes: 1 base-unit = 1 mote, max 2.5 CSPR.
-const MIN_TRANSFER_MOTES = BigInt(2_500_000_000);
+// Minimum transfer: 10_000_000 motes (0.01 CSPR) — keeps wallet balance going longer.
+const MIN_TRANSFER_MOTES = BigInt(10_000_000);
 
 // Gas cap: 0.1 CSPR
 const GAS_MOTES = 100_000_000;
@@ -77,10 +76,7 @@ async function main() {
 
   const recipientKey = PublicKey.fromHex(SETTLEMENT_POOL_PK);
 
-  // Transfer motes = notional amount in motes, floored at 2.5 CSPR minimum.
-  // e.g. 50_000 EUR → 50_000 motes, but since that's below 2.5 CSPR
-  // we use 2_500_000_000 (the minimum). For large notionals (>= 2.5 CSPR
-  // in base units) we use the actual amount.
+  // Transfer motes = floored at 0.01 CSPR minimum to conserve wallet balance.
   const notionalMotes = BigInt(Math.floor(amount));
   const transferMotes = notionalMotes > MIN_TRANSFER_MOTES
     ? notionalMotes
