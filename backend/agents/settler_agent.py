@@ -1,14 +1,17 @@
 """ALPHXC Settler Agent — routes open trade requests to the FX liquidity pool.
 
 Any OPEN request older than SETTLE_AFTER seconds is settled at the current
-market rate with a small simulated pool spread.  This guarantees a continuous
-stream of on-chain SWAP executions regardless of whether a P2P counterparty
-exists.
+market rate with a small simulated pool spread and a real Casper testnet
+transaction.  Each settlement submits a native CSPR transfer to the ALPHXC
+Settlement Pool address; the returned deploy hash is the permanent on-chain
+record of the swap.
 """
 import sys
 import time
+import json
 import hashlib
 import random
+import subprocess
 
 sys.path.insert(0, "/root/alphx")
 
@@ -16,15 +19,61 @@ from backend.db import (
     init_db, log_agent, log_decision,
     get_open_trade_requests, settle_trade_pair, get_rate,
 )
+from backend.config import CASPER_NODE_URL
 
 AGENT_ID    = "settler"
-POLL        = 10   # check every 10 seconds
-SETTLE_AFTER = 20  # settle any open request after this many seconds
+POLL        = 10    # check every 10 seconds
+SETTLE_AFTER = 20   # settle any open request after this many seconds
+
+# Node.js script that submits the real Casper transaction
+SETTLE_TX_SCRIPT = "/root/alphx/backend/casper_helper/settle_tx.cjs"
+SECRET_KEY_PATH  = "/root/alphx/wallet/secret_key.pem"
 
 
-def _tx_hash(pair: str, req_id: int) -> str:
-    seed = f"alphxc-{pair}-{req_id}-{int(time.time())}"
-    return hashlib.sha256(seed.encode()).hexdigest()
+def _submit_casper_tx(pair: str, direction: str, amount: float, rate: float, req_id: int) -> str:
+    """Submit a native CSPR transfer to the Casper testnet as proof of settlement.
+
+    Returns the deploy hash on success, or a local fallback hash on failure.
+    """
+    args = json.dumps({
+        "secret_key_path": SECRET_KEY_PATH,
+        "pair": pair,
+        "direction": direction,
+        "amount": amount,
+        "rate": rate,
+        "req_id": req_id,
+        "node_url": CASPER_NODE_URL or "https://node.testnet.casper.network/rpc",
+    })
+
+    try:
+        result = subprocess.run(
+            ["node", SETTLE_TX_SCRIPT, args],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd="/root/alphx/backend/casper_helper",
+        )
+        # Always try to parse stdout for a tx_hash — the SDK may exit non-zero
+        # due to async cleanup errors even after successfully submitting the tx.
+        if result.stdout.strip():
+            try:
+                data = json.loads(result.stdout.strip())
+                tx_hash = data.get("tx_hash", "")
+                if tx_hash:
+                    return tx_hash
+            except json.JSONDecodeError:
+                pass
+        if result.returncode != 0:
+            err = (result.stderr or result.stdout)[:200]
+            log_agent(AGENT_ID, f"Casper TX no hash for req#{req_id}: {err[:100]}")
+    except subprocess.TimeoutExpired:
+        log_agent(AGENT_ID, f"Casper TX timeout for req#{req_id}")
+    except Exception as e:
+        log_agent(AGENT_ID, f"Casper TX error for req#{req_id}: {e}")
+
+    # Fallback: local hash prefixed so UI can distinguish from real tx hashes
+    seed = f"alphxc-fallback-{pair}-{req_id}-{int(time.time())}"
+    return "local-" + hashlib.sha256(seed.encode()).hexdigest()[:58]
 
 
 def settle_request(req: dict):
@@ -35,16 +84,24 @@ def settle_request(req: dict):
         return
 
     real_rate   = rate_row["rate"]
-    pool_spread = random.uniform(0.001, 0.008)          # 0.1 – 0.8 %
+    pool_spread = random.uniform(0.001, 0.008)     # 0.1 – 0.8 %
     if req["direction"] == "BUY":
-        pool_rate = real_rate * (1 + pool_spread)       # pool asks slightly more
+        pool_rate = real_rate * (1 + pool_spread)
     else:
-        pool_rate = real_rate * (1 - pool_spread)       # pool bids slightly less
+        pool_rate = real_rate * (1 - pool_spread)
 
     spread_pct = abs(real_rate - pool_rate) / real_rate * 100
-    tx         = _tx_hash(pair, req["id"])
 
-    # Mark the single request settled (match_id = itself as pool fill)
+    log_agent(AGENT_ID, f"Submitting Casper tx for req#{req['id']} {req['direction']} {pair}...")
+
+    tx = _submit_casper_tx(
+        pair      = pair,
+        direction = req["direction"],
+        amount    = req["amount"],
+        rate      = round(pool_rate, 6),
+        req_id    = req["id"],
+    )
+
     settle_trade_pair(req["id"], req["id"], real_rate, tx)
 
     log_decision(
@@ -63,17 +120,19 @@ def settle_request(req: dict):
         tx_hash    = tx,
     )
 
+    is_onchain = not tx.startswith("local-")
+    label = "⛓ on-chain" if is_onchain else "local-hash"
     log_agent(
         AGENT_ID,
         f"SETTLED req#{req['id']} {req['direction']} {pair} "
         f"{req['amount']:,.0f} @ {real_rate:.6f} "
-        f"spread={spread_pct:.3f}% tx={tx[:14]}...",
+        f"spread={spread_pct:.3f}% [{label}] tx={tx[:14]}...",
     )
 
 
 def run():
     init_db()
-    log_agent(AGENT_ID, "Settler started — routing to pool, settle delay 20 s")
+    log_agent(AGENT_ID, "Settler started — real Casper txs, pool routing, settle delay 20 s")
 
     while True:
         try:
@@ -84,7 +143,7 @@ def run():
             if due:
                 for req in due:
                     settle_request(req)
-                    time.sleep(1)           # small gap between settlements
+                    time.sleep(2)     # brief gap to avoid nonce collisions
             else:
                 if open_reqs:
                     oldest_age = now - min(r["timestamp"] for r in open_reqs)

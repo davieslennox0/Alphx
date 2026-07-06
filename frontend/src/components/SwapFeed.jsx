@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 
 const API_BASE = import.meta.env.VITE_API_URL || ''
-const EXPLORER = 'https://testnet.cspr.live/deploy'
+// Casper 2.0 uses /transaction/ path for native transfers
+const EXPLORER = 'https://testnet.cspr.live/transaction'
 
 function fmt(ts) {
   return new Date(ts * 1000).toTimeString().slice(0, 8)
@@ -55,18 +56,25 @@ export default function SwapFeed() {
             </div>
             <div className="pl-0.5">
               {s.tx_hash ? (
-                <>
-                  <span className="text-zinc-600">tx: </span>
-                  <a
-                    href={`${EXPLORER}/${s.tx_hash}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-400 hover:text-blue-300 underline underline-offset-2"
-                  >
-                    {s.tx_hash.slice(0, 14)}…{s.tx_hash.slice(-6)}
-                  </a>
-                  <span className="text-zinc-700 ml-1">↗ cspr.live</span>
-                </>
+                s.tx_hash.startsWith('local-') ? (
+                  <span className="text-zinc-600 text-xs">ref: {s.tx_hash.slice(6, 20)}… (local)</span>
+                ) : (
+                  <>
+                    <span className="text-zinc-600">tx: </span>
+                    <a
+                      href={`${EXPLORER}/${s.tx_hash}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-400 hover:text-blue-300 underline underline-offset-2"
+                    >
+                      {s.tx_hash.slice(0, 14)}…{s.tx_hash.slice(-6)}
+                    </a>
+                    <span className="text-zinc-700 ml-1">↗ cspr.live</span>
+                    <span className="ml-1 text-zinc-700 text-xs">
+                      {s.pair ? `[${s.pair.replace('/', '')} token]` : ''}
+                    </span>
+                  </>
+                )
               ) : (
                 <span className="text-zinc-700">tx: pending</span>
               )}

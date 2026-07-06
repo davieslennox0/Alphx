@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 
 const API_BASE = import.meta.env.VITE_API_URL || ''
-const EXPLORER = 'https://testnet.cspr.live/deploy'
+const EXPLORER = 'https://testnet.cspr.live/transaction'
 
 const AGENT_COLORS = {
   trader_a: { label: 'AFROPAY',  bg: 'bg-orange-900', text: 'text-orange-300' },
@@ -85,16 +85,23 @@ export default function TradeRequestFeed() {
                 <span className={`shrink-0 text-xs ${STATUS_COLORS[t.status] || 'text-zinc-500'}`}>{t.status}</span>
               </div>
               {t.status === 'SETTLED' && t.tx_hash && (
-                <div className="pl-1 mt-0.5">
-                  <span className="text-zinc-700">tx: </span>
-                  <a
-                    href={`${EXPLORER}/${t.tx_hash}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-400 hover:text-blue-300 underline underline-offset-2"
-                  >
-                    {t.tx_hash.slice(0, 12)}…{t.tx_hash.slice(-6)}
-                  </a>
+                <div className="pl-1 mt-0.5 flex items-center gap-1 flex-wrap">
+                  <span className="text-zinc-700 text-xs">{t.pair ? t.pair.replace('/', '') : 'FX'} token swap:</span>
+                  {t.tx_hash.startsWith('local-') ? (
+                    <span className="text-zinc-600 text-xs font-mono">{t.tx_hash.slice(6, 18)}… (local ref)</span>
+                  ) : (
+                    <>
+                      <a
+                        href={`${EXPLORER}/${t.tx_hash}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-400 hover:text-blue-300 underline underline-offset-2 text-xs"
+                      >
+                        {t.tx_hash.slice(0, 12)}…{t.tx_hash.slice(-6)}
+                      </a>
+                      <span className="text-zinc-700 text-xs">↗ cspr.live</span>
+                    </>
+                  )}
                 </div>
               )}
             </div>
