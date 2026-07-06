@@ -100,11 +100,7 @@ async function main() {
 
   const result = await rpcClient.putTransaction(transaction);
 
-  const hash = result.transactionHash && result.transactionHash.toHex
-    ? result.transactionHash.toHex()
-    : (result.transactionHash
-        ? JSON.stringify(result.transactionHash).replace(/"/g, '')
-        : '');
+  const hash = result.rawJSON?.transaction_hash?.Version1 || '';
 
   console.log(JSON.stringify({
     tx_hash: hash,
