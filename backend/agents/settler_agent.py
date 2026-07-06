@@ -26,9 +26,6 @@ SETTLE_AFTER = 20   # settle any open request after this many seconds
 SETTLE_TX_SCRIPT = "/root/alphx/backend/casper_helper/settle_tx.cjs"
 MANIFEST_PATH    = "/root/alphx/wallet/agents/manifest.json"
 
-# Master wallet — always the sender until agent wallets are funded
-MASTER_KEY_PATH  = "/root/alphx/wallet/secret_key.pem"
-
 # Recipient rotation: settlements cycle through agent wallets as destination
 RECIPIENT_ORDER = ["trader_a", "trader_b", "trader_c", "settler"]
 _recipient_idx  = 0
@@ -37,28 +34,24 @@ def _load_manifest():
     with open(MANIFEST_PATH) as f:
         return json.load(f)
 
-def _next_recipient() -> str:
-    global _recipient_idx
-    manifest = _load_manifest()
-    name = RECIPIENT_ORDER[_recipient_idx % len(RECIPIENT_ORDER)]
-    _recipient_idx += 1
-    return manifest[name]["public_key"]
-
-
 def _submit_casper_tx(pair: str, direction: str, amount: float, rate: float,
                       req_id: int, requesting_agent: str) -> str:
     """Submit a real CSPR transfer on Casper testnet.
 
-    Sends from the master (funded) wallet to the next agent wallet in rotation.
-    When agent wallets are funded by the user they can take turns as senders too.
+    Sender = requesting agent's own wallet. Recipient = next in rotation.
+    CSPR circulates within the agent pool indefinitely.
     """
     try:
-        recipient_public_key = _next_recipient()
+        manifest = _load_manifest()
+        sender_name          = requesting_agent if requesting_agent in manifest else "settler"
+        sender_key_path      = manifest[sender_name]["pem_path"]
+        recipient_name       = RECIPIENT_ORDER[_recipient_idx % len(RECIPIENT_ORDER)]
+        recipient_public_key = manifest[recipient_name]["public_key"]
+        global _recipient_idx
+        _recipient_idx += 1
     except Exception as e:
         log_agent(AGENT_ID, f"Cannot load wallet manifest: {e}")
         return _fallback(pair, req_id)
-
-    sender_key_path = MASTER_KEY_PATH
 
     args = json.dumps({
         "sender_key_path":      sender_key_path,
@@ -128,7 +121,7 @@ def settle_request(req: dict):
         amount           = req["amount"],
         rate             = round(pool_rate, 6),
         req_id           = req["id"],
-        requesting_agent = req.get("agent_name", "settler"),  # reserved for when agent wallets are funded
+        requesting_agent = req.get("agent_name", "settler"),
     )
 
     settle_trade_pair(req["id"], req["id"], real_rate, tx)
