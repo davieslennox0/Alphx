@@ -28,7 +28,7 @@ MANIFEST_PATH    = "/root/alphx/wallet/agents/manifest.json"
 
 # Recipient rotation: settlements cycle through agent wallets as destination
 RECIPIENT_ORDER = ["trader_a", "trader_b", "trader_c", "settler"]
-_recipient_idx  = 0
+_rotation       = [0]  # mutable so inner functions can increment without global
 
 def _load_manifest():
     with open(MANIFEST_PATH) as f:
@@ -45,10 +45,9 @@ def _submit_casper_tx(pair: str, direction: str, amount: float, rate: float,
         manifest = _load_manifest()
         sender_name          = requesting_agent if requesting_agent in manifest else "settler"
         sender_key_path      = manifest[sender_name]["pem_path"]
-        recipient_name       = RECIPIENT_ORDER[_recipient_idx % len(RECIPIENT_ORDER)]
+        recipient_name       = RECIPIENT_ORDER[_rotation[0] % len(RECIPIENT_ORDER)]
         recipient_public_key = manifest[recipient_name]["public_key"]
-        global _recipient_idx
-        _recipient_idx += 1
+        _rotation[0] += 1
     except Exception as e:
         log_agent(AGENT_ID, f"Cannot load wallet manifest: {e}")
         return _fallback(pair, req_id)
