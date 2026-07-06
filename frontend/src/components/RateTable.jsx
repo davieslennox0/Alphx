@@ -1,7 +1,12 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 
-const PAYMENT_SIG = import.meta.env.VITE_PAYMENT_SIG || ''
 const API_BASE = import.meta.env.VITE_API_URL || ''
+
+const MAJOR_PAIRS = new Set([
+  'EUR/USD', 'GBP/USD', 'USD/JPY', 'USD/CHF', 'USD/CAD', 'AUD/USD', 'NZD/USD',
+  'EUR/GBP', 'EUR/JPY', 'EUR/CHF', 'EUR/AUD', 'GBP/JPY', 'AUD/JPY',
+  'USD/MXN', 'USD/TRY', 'USD/ZAR', 'USD/NGN', 'USD/SGD', 'USD/HKD', 'USD/INR',
+])
 
 function staleness(ts) {
   const age = Date.now() / 1000 - ts
@@ -32,39 +37,18 @@ export default function RateTable({ onStats }) {
   const [sortKey, setSortKey] = useState('pair')
   const [sortDir, setSortDir] = useState(1)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+  const [showAll, setShowAll] = useState(false)
   const tableBodyRef = useRef(null)
 
   const fetchRates = async () => {
     try {
-      const resp = await fetch(`${API_BASE}/fx/rates/all`, {
-        headers: PAYMENT_SIG ? { 'X-PAYMENT-SIGNATURE': PAYMENT_SIG } : {},
-      })
-
-      if (resp.status === 402) {
-        // Fallback: fetch pairs list then show without rates
-        const pairsResp = await fetch(`${API_BASE}/fx/pairs`)
-        if (pairsResp.ok) {
-          const data = await pairsResp.json()
-          const mock = data.pairs.map(p => ({
-            pair: p, rate: null, bid: null, ask: null,
-            spread: null, source: '—', timestamp: 0, stale: 1
-          }))
-          setRates(mock)
-          onStats?.({ pair_count: mock.length })
-        }
-        setError('x402: Payment required for live rates. Set VITE_PAYMENT_SIG.')
-        setLoading(false)
-        return
-      }
-
+      const resp = await fetch(`${API_BASE}/fx/rates/snapshot`)
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
       const data = await resp.json()
       setRates(data.rates || [])
       onStats?.({ pair_count: data.count })
-      setError(null)
     } catch (e) {
-      setError(e.message)
+      console.error('rate fetch error', e)
     } finally {
       setLoading(false)
     }
@@ -83,7 +67,8 @@ export default function RateTable({ onStats }) {
 
   const filtered = useMemo(() => {
     const q = search.toUpperCase()
-    return rates
+    const base = showAll ? rates : rates.filter(r => MAJOR_PAIRS.has(r.pair))
+    return base
       .filter(r => !q || r.pair.includes(q))
       .sort((a, b) => {
         let av = a[sortKey], bv = b[sortKey]
@@ -93,7 +78,7 @@ export default function RateTable({ onStats }) {
         if (bv == null) return -1
         return av < bv ? -sortDir : av > bv ? sortDir : 0
       })
-  }, [rates, search, sortKey, sortDir])
+  }, [rates, search, sortKey, sortDir, showAll])
 
   const SortHeader = ({ label, field }) => (
     <th
@@ -109,23 +94,23 @@ export default function RateTable({ onStats }) {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center gap-3 mb-3">
+      <div className="flex items-center gap-2 mb-3">
         <input
           type="text"
           value={search}
           onChange={e => setSearch(e.target.value)}
-          placeholder="Search pair or currency..."
+          placeholder="Search pair..."
           className="flex-1 bg-surface-2 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-zinc-500"
         />
-        <span className="text-xs text-zinc-600">{filtered.length} pairs</span>
+        <span className="text-xs text-zinc-600 shrink-0">{filtered.length} pairs</span>
+        <button
+          onClick={() => setShowAll(s => !s)}
+          className="shrink-0 px-2 py-1 text-xs rounded border border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200 transition-colors"
+        >
+          {showAll ? `Majors only` : `Show all ${rates.length}`}
+        </button>
         {loading && <span className="text-xs text-zinc-500">loading...</span>}
       </div>
-
-      {error && (
-        <div className="mb-2 px-3 py-1.5 bg-zinc-900 border border-zinc-700 rounded text-xs text-yellow-500">
-          {error}
-        </div>
-      )}
 
       <div className="flex-1 overflow-auto">
         <table className="w-full text-xs border-collapse">
@@ -143,7 +128,11 @@ export default function RateTable({ onStats }) {
           </thead>
           <tbody ref={tableBodyRef}>
             {filtered.map(r => {
-              const color = r.timestamp ? staleness(r.timestamp) : 'red'
+              const color = r.timestamp && !r.stale ? staleness(r.timestamp) : 'red'
+              const statusLabel = r.stale
+                ? 'stale'
+                : color === 'green' ? 'live'
+                : color === 'yellow' ? 'aging' : 'stale'
               return (
                 <tr
                   key={r.pair}
@@ -180,7 +169,7 @@ export default function RateTable({ onStats }) {
                       color === 'green' ? 'text-green-500' :
                       color === 'yellow' ? 'text-yellow-500' : 'text-red-500'
                     }`}>
-                      {r.stale ? 'stale' : color === 'green' ? 'live' : color === 'yellow' ? 'aging' : 'stale'}
+                      {statusLabel}
                     </span>
                   </td>
                 </tr>

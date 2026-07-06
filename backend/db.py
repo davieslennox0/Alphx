@@ -42,6 +42,22 @@ CREATE TABLE IF NOT EXISTS payments (
     tx_hash TEXT,
     timestamp INTEGER
 );
+
+CREATE TABLE IF NOT EXISTS trade_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent TEXT,
+    agent_name TEXT,
+    pair TEXT,
+    direction TEXT,
+    amount REAL,
+    rate_limit REAL,
+    status TEXT DEFAULT 'OPEN',
+    match_id INTEGER,
+    tx_hash TEXT DEFAULT '',
+    settled_rate REAL,
+    timestamp INTEGER,
+    settled_at INTEGER
+);
 """
 
 
@@ -160,3 +176,49 @@ def count_swaps_today() -> int:
             "SELECT COUNT(*) as c FROM decisions WHERE action='SWAP' AND timestamp > ?", (start,)
         ).fetchone()
         return row["c"]
+
+
+def post_trade_request(
+    agent: str, agent_name: str, pair: str, direction: str,
+    amount: float, rate_limit: float | None = None
+) -> int:
+    ts = int(time.time())
+    with get_conn() as conn:
+        cur = conn.execute(
+            """INSERT INTO trade_requests
+               (agent, agent_name, pair, direction, amount, rate_limit, status, timestamp)
+               VALUES (?, ?, ?, ?, ?, ?, 'OPEN', ?)""",
+            (agent, agent_name, pair, direction, amount, rate_limit, ts),
+        )
+        return cur.lastrowid
+
+
+def get_open_trade_requests() -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM trade_requests WHERE status='OPEN' ORDER BY timestamp ASC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def settle_trade_pair(buy_id: int, sell_id: int, settled_rate: float, tx_hash: str):
+    now = int(time.time())
+    with get_conn() as conn:
+        conn.execute(
+            """UPDATE trade_requests SET status='SETTLED', match_id=?, tx_hash=?,
+               settled_rate=?, settled_at=? WHERE id=?""",
+            (sell_id, tx_hash, settled_rate, now, buy_id),
+        )
+        conn.execute(
+            """UPDATE trade_requests SET status='SETTLED', match_id=?, tx_hash=?,
+               settled_rate=?, settled_at=? WHERE id=?""",
+            (buy_id, tx_hash, settled_rate, now, sell_id),
+        )
+
+
+def get_recent_trade_requests(limit: int = 50) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM trade_requests ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return [dict(r) for r in reversed(rows)]

@@ -28,5 +28,33 @@ module.exports = {
       cwd: '/root/alphx',
       env: { PYTHONPATH: '/root/alphx' },
     },
+    {
+      name: 'alphxc-trader-a',
+      script: 'backend/agents/trader_a.py',
+      interpreter: 'python3',
+      cwd: '/root/alphx',
+      env: { PYTHONPATH: '/root/alphx' },
+    },
+    {
+      name: 'alphxc-trader-b',
+      script: 'backend/agents/trader_b.py',
+      interpreter: 'python3',
+      cwd: '/root/alphx',
+      env: { PYTHONPATH: '/root/alphx' },
+    },
+    {
+      name: 'alphxc-trader-c',
+      script: 'backend/agents/trader_c.py',
+      interpreter: 'python3',
+      cwd: '/root/alphx',
+      env: { PYTHONPATH: '/root/alphx' },
+    },
+    {
+      name: 'alphxc-settler',
+      script: 'backend/agents/settler_agent.py',
+      interpreter: 'python3',
+      cwd: '/root/alphx',
+      env: { PYTHONPATH: '/root/alphx' },
+    },
   ],
 }

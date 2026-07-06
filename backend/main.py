@@ -7,12 +7,13 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import BaseModel
 
 from backend.db import (
     init_db, get_all_rates, get_rate,
     get_recent_logs, get_recent_decisions, get_swaps,
     count_decisions_today, count_swaps_today,
-    mark_stale_rates,
+    mark_stale_rates, get_recent_trade_requests, post_trade_request,
 )
 from backend.x402 import payment_required
 from backend.config import PORT
@@ -79,6 +80,14 @@ async def fx_rates_batch(request: Request, pairs: str = Query(..., description="
 @app.get("/fx/rates/all")
 @payment_required(amount_cspr=0.01)
 async def fx_rates_all(request: Request):
+    mark_stale_rates(900)
+    rates = get_all_rates()
+    return {"rates": rates, "count": len(rates), "timestamp": int(time.time())}
+
+
+@app.get("/fx/rates/snapshot")
+async def fx_rates_snapshot():
+    """Free public snapshot for dashboard display."""
     mark_stale_rates(900)
     rates = get_all_rates()
     return {"rates": rates, "count": len(rates), "timestamp": int(time.time())}
@@ -195,6 +204,24 @@ async def agent_swaps():
     )
 
 
+@app.get("/agent/feed/recent")
+async def agent_feed_recent():
+    return {"logs": get_recent_logs(10)}
+
+
+@app.get("/agent/feed/since")
+async def agent_feed_since(after: int = Query(0)):
+    import sqlite3
+    from backend.config import DB_PATH
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        "SELECT * FROM agent_log WHERE id > ? ORDER BY id ASC LIMIT 20", (after,)
+    ).fetchall()
+    conn.close()
+    return {"logs": [dict(r) for r in rows]}
+
+
 @app.get("/agent/decisions/recent")
 async def decisions_recent():
     return {"decisions": get_recent_decisions(50)}
@@ -203,3 +230,75 @@ async def decisions_recent():
 @app.get("/agent/swaps/recent")
 async def swaps_recent():
     return {"swaps": get_swaps(50)}
+
+
+@app.get("/agent/trades")
+async def agent_trades():
+    async def event_generator():
+        last_id = 0
+        import sqlite3
+        from backend.config import DB_PATH
+
+        while True:
+            try:
+                conn = sqlite3.connect(DB_PATH)
+                conn.row_factory = sqlite3.Row
+                rows = conn.execute(
+                    "SELECT * FROM trade_requests WHERE id > ? ORDER BY id ASC LIMIT 20",
+                    (last_id,),
+                ).fetchall()
+                conn.close()
+
+                for row in rows:
+                    last_id = row["id"]
+                    yield f"data: {json.dumps(dict(row))}\n\n"
+
+                if not rows:
+                    yield ": heartbeat\n\n"
+
+            except Exception as e:
+                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
+            await asyncio.sleep(2)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.get("/agent/trades/recent")
+async def trades_recent():
+    return {"trades": get_recent_trade_requests(50)}
+
+
+class UserTradeRequest(BaseModel):
+    public_key: str
+    pair: str
+    direction: str        # BUY | SELL
+    amount: float
+
+
+@app.post("/trade/request")
+async def user_trade_request(body: UserTradeRequest):
+    pk = body.public_key.strip()
+    direction = body.direction.upper()
+    pair = body.pair.upper()
+
+    if direction not in ("BUY", "SELL"):
+        return JSONResponse(status_code=400, content={"error": "direction must be BUY or SELL"})
+    if body.amount <= 0:
+        return JSONResponse(status_code=400, content={"error": "amount must be positive"})
+    if "/" not in pair:
+        return JSONResponse(status_code=400, content={"error": "invalid pair format"})
+
+    short_key = f"{pk[:8]}…{pk[-4:]}" if len(pk) > 12 else pk
+    req_id = post_trade_request(
+        agent="user",
+        agent_name=short_key,
+        pair=pair,
+        direction=direction,
+        amount=round(body.amount, 2),
+    )
+    return {"req_id": req_id, "status": "OPEN", "pair": pair, "direction": direction, "amount": body.amount}
