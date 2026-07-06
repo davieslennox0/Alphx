@@ -10,3 +10,4 @@ contract/wasm/
 .DS_Store
 wallet/
 frontend/package-lock.json
+wallet/agents/

@@ -1,10 +1,8 @@
-"""ALPHXC Settler Agent — routes open trade requests to the FX liquidity pool.
+"""ALPHXC Settler Agent — routes open trade requests between agent wallets.
 
-Any OPEN request older than SETTLE_AFTER seconds is settled at the current
-market rate with a small simulated pool spread and a real Casper testnet
-transaction.  Each settlement submits a native CSPR transfer to the ALPHXC
-Settlement Pool address; the returned deploy hash is the permanent on-chain
-record of the swap.
+Each settlement submits a real Casper testnet CSPR transfer from the
+requesting agent's wallet to the next agent's wallet in the rotation.
+CSPR stays within the agent pool — no funds are burned.
 """
 import sys
 import time
@@ -21,28 +19,50 @@ from backend.db import (
 )
 from backend.config import CASPER_NODE_URL
 
-AGENT_ID    = "settler"
-POLL        = 10    # check every 10 seconds
+AGENT_ID     = "settler"
+POLL         = 10   # check every 10 seconds
 SETTLE_AFTER = 20   # settle any open request after this many seconds
 
-# Node.js script that submits the real Casper transaction
 SETTLE_TX_SCRIPT = "/root/alphx/backend/casper_helper/settle_tx.cjs"
-SECRET_KEY_PATH  = "/root/alphx/wallet/secret_key.pem"
+MANIFEST_PATH    = "/root/alphx/wallet/agents/manifest.json"
 
+# Rotation: each agent sends to the next in line so CSPR circulates
+SEND_TO = {
+    "trader_a": "trader_b",
+    "trader_b": "trader_c",
+    "trader_c": "trader_a",
+    "settler":  "trader_a",
+    "user":     "trader_b",
+}
 
-def _submit_casper_tx(pair: str, direction: str, amount: float, rate: float, req_id: int) -> str:
-    """Submit a native CSPR transfer to the Casper testnet as proof of settlement.
+def _load_manifest():
+    with open(MANIFEST_PATH) as f:
+        return json.load(f)
 
-    Returns the deploy hash on success, or a local fallback hash on failure.
-    """
+def _submit_casper_tx(pair: str, direction: str, amount: float, rate: float,
+                      req_id: int, requesting_agent: str) -> str:
+    """Submit a real CSPR transfer between agent wallets on Casper testnet."""
+    try:
+        manifest = _load_manifest()
+    except Exception as e:
+        log_agent(AGENT_ID, f"Cannot load wallet manifest: {e}")
+        return _fallback(pair, req_id)
+
+    sender_name    = requesting_agent if requesting_agent in manifest else "settler"
+    recipient_name = SEND_TO.get(sender_name, "trader_a")
+
+    sender_key_path      = manifest[sender_name]["pem_path"]
+    recipient_public_key = manifest[recipient_name]["public_key"]
+
     args = json.dumps({
-        "secret_key_path": SECRET_KEY_PATH,
-        "pair": pair,
+        "sender_key_path":      sender_key_path,
+        "recipient_public_key": recipient_public_key,
+        "pair":      pair,
         "direction": direction,
-        "amount": amount,
-        "rate": rate,
-        "req_id": req_id,
-        "node_url": CASPER_NODE_URL or "https://node.testnet.casper.network/rpc",
+        "amount":    amount,
+        "rate":      rate,
+        "req_id":    req_id,
+        "node_url":  CASPER_NODE_URL or "https://node.testnet.casper.network/rpc",
     })
 
     try:
@@ -53,25 +73,27 @@ def _submit_casper_tx(pair: str, direction: str, amount: float, rate: float, req
             timeout=30,
             cwd="/root/alphx/backend/casper_helper",
         )
-        # Always try to parse stdout for a tx_hash — the SDK may exit non-zero
-        # due to async cleanup errors even after successfully submitting the tx.
         if result.stdout.strip():
             try:
                 data = json.loads(result.stdout.strip())
                 tx_hash = data.get("tx_hash", "")
                 if tx_hash:
+                    log_agent(AGENT_ID,
+                        f"Casper tx: {sender_name} → {recipient_name} req#{req_id} hash={tx_hash[:14]}…")
                     return tx_hash
             except json.JSONDecodeError:
                 pass
-        if result.returncode != 0:
-            err = (result.stderr or result.stdout)[:200]
-            log_agent(AGENT_ID, f"Casper TX no hash for req#{req_id}: {err[:100]}")
+        err = (result.stderr or result.stdout)[:200]
+        log_agent(AGENT_ID, f"Casper TX no hash for req#{req_id}: {err[:100]}")
     except subprocess.TimeoutExpired:
         log_agent(AGENT_ID, f"Casper TX timeout for req#{req_id}")
     except Exception as e:
         log_agent(AGENT_ID, f"Casper TX error for req#{req_id}: {e}")
 
-    # Fallback: local hash prefixed so UI can distinguish from real tx hashes
+    return _fallback(pair, req_id)
+
+
+def _fallback(pair: str, req_id: int) -> str:
     seed = f"alphxc-fallback-{pair}-{req_id}-{int(time.time())}"
     return "local-" + hashlib.sha256(seed.encode()).hexdigest()[:58]
 
@@ -84,7 +106,7 @@ def settle_request(req: dict):
         return
 
     real_rate   = rate_row["rate"]
-    pool_spread = random.uniform(0.001, 0.008)     # 0.1 – 0.8 %
+    pool_spread = random.uniform(0.001, 0.008)
     if req["direction"] == "BUY":
         pool_rate = real_rate * (1 + pool_spread)
     else:
@@ -92,14 +114,15 @@ def settle_request(req: dict):
 
     spread_pct = abs(real_rate - pool_rate) / real_rate * 100
 
-    log_agent(AGENT_ID, f"Submitting Casper tx for req#{req['id']} {req['direction']} {pair}...")
+    log_agent(AGENT_ID, f"Submitting Casper tx for req#{req['id']} {req['direction']} {pair}…")
 
     tx = _submit_casper_tx(
-        pair      = pair,
-        direction = req["direction"],
-        amount    = req["amount"],
-        rate      = round(pool_rate, 6),
-        req_id    = req["id"],
+        pair             = pair,
+        direction        = req["direction"],
+        amount           = req["amount"],
+        rate             = round(pool_rate, 6),
+        req_id           = req["id"],
+        requesting_agent = req.get("agent_name", "settler"),
     )
 
     settle_trade_pair(req["id"], req["id"], real_rate, tx)
@@ -111,8 +134,8 @@ def settle_request(req: dict):
         spread_pct = round(spread_pct, 4),
         decision   = "SWAP",
         rationale  = (
-            f"{req['agent_name']} {req['direction']} {pair} "
-            f"notional={req['amount']:,.0f} settled via pool @ {real_rate:.6f} "
+            f"{req.get('agent_name','?')} {req['direction']} {pair} "
+            f"notional={req['amount']:,.0f} settled @ {real_rate:.6f} "
             f"spread={spread_pct:.3f}%"
         ),
         action     = "SWAP",
@@ -126,24 +149,24 @@ def settle_request(req: dict):
         AGENT_ID,
         f"SETTLED req#{req['id']} {req['direction']} {pair} "
         f"{req['amount']:,.0f} @ {real_rate:.6f} "
-        f"spread={spread_pct:.3f}% [{label}] tx={tx[:14]}...",
+        f"spread={spread_pct:.3f}% [{label}] tx={tx[:14]}…",
     )
 
 
 def run():
     init_db()
-    log_agent(AGENT_ID, "Settler started — real Casper txs, pool routing, settle delay 20 s")
+    log_agent(AGENT_ID, "Settler started — agent wallet rotation, real Casper txs")
 
     while True:
         try:
-            now  = int(time.time())
+            now       = int(time.time())
             open_reqs = get_open_trade_requests()
-            due  = [r for r in open_reqs if now - r["timestamp"] >= SETTLE_AFTER]
+            due       = [r for r in open_reqs if now - r["timestamp"] >= SETTLE_AFTER]
 
             if due:
                 for req in due:
                     settle_request(req)
-                    time.sleep(2)     # brief gap to avoid nonce collisions
+                    time.sleep(2)
             else:
                 if open_reqs:
                     oldest_age = now - min(r["timestamp"] for r in open_reqs)
