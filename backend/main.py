@@ -13,6 +13,7 @@ from backend.db import (
     init_db, get_all_rates, get_rate,
     get_recent_logs, get_recent_decisions, get_swaps,
     count_decisions_today, count_swaps_today,
+    count_total_settled, count_onchain_tx, count_total_decisions,
     mark_stale_rates, get_recent_trade_requests, post_trade_request,
 )
 from backend.x402 import payment_required
@@ -46,6 +47,9 @@ async def health():
         "last_update": last_update,
         "decisions_today": count_decisions_today(),
         "swaps_executed": count_swaps_today(),
+        "total_settled": count_total_settled(),
+        "total_onchain_tx": count_onchain_tx(),
+        "total_decisions": count_total_decisions(),
     }
 
 

@@ -178,6 +178,30 @@ def count_swaps_today() -> int:
         return row["c"]
 
 
+def count_total_settled() -> int:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) as c FROM trade_requests WHERE status='SETTLED'"
+        ).fetchone()
+        return row["c"]
+
+
+def count_onchain_tx() -> int:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) as c FROM trade_requests "
+            "WHERE status='SETTLED' AND tx_hash != '' AND tx_hash IS NOT NULL "
+            "AND tx_hash NOT LIKE 'local-%'"
+        ).fetchone()
+        return row["c"]
+
+
+def count_total_decisions() -> int:
+    with get_conn() as conn:
+        row = conn.execute("SELECT COUNT(*) as c FROM decisions").fetchone()
+        return row["c"]
+
+
 def post_trade_request(
     agent: str, agent_name: str, pair: str, direction: str,
     amount: float, rate_limit: float | None = None

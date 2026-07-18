@@ -52,7 +52,7 @@ export default function SwapFeed() {
               <span className="text-green-400">conf {((s.confidence || 0) * 100).toFixed(0)}%</span>
             </div>
             <div className="text-zinc-600 text-xs truncate pl-0.5 mb-0.5">
-              {s.groq_rationale || s.groq_decision}
+              {s.groq_rationale || '—'}
             </div>
             <div className="pl-0.5">
               {s.tx_hash ? (

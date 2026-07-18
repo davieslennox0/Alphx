@@ -54,8 +54,9 @@ export default function App() {
           {/* Stats — all same height via items-center on parent */}
           <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
             <StatChip label="Pairs"     value={health?.pair_count ?? extraStats?.pair_count ?? '…'} />
-            <StatChip label="Decisions" value={health?.decisions_today ?? 0} />
-            <StatChip label="Swaps"     value={health?.swaps_executed ?? 0} highlight={health?.swaps_executed > 0} />
+            <StatChip label="Settled"   value={health?.total_settled != null ? health.total_settled.toLocaleString() : '…'} highlight />
+            <StatChip label="On-chain"  value={health?.total_onchain_tx != null ? `${health.total_onchain_tx.toLocaleString()} ⛓` : '…'} highlight={health?.total_onchain_tx > 0} />
+            <StatChip label="Decisions" value={health?.total_decisions != null ? health.total_decisions.toLocaleString() : '…'} />
             <StatChip label="Updated"   value={health?.last_update ? new Date(health.last_update * 1000).toLocaleTimeString() : '—'} />
             <StatChip label="LLM"       value="Groq llama-3.3-70b" />
           </div>

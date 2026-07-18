@@ -2,6 +2,8 @@
 
 ALPHXC is a multi-agent autonomous FX settlement platform. Seven background agents monitor 100+ real forex pairs, post cross-border trade requests, and settle them on Casper Network — with Groq LLM as the decision brain and a Casper Wallet-connected UI for user-submitted trades.
 
+**3,400+ real Casper testnet transactions · 32,000+ settled trades · 220,000+ Groq decisions**
+
 **Live:** `https://alphxc.duckdns.org`  
 **Buildathon tracks:** Agentic AI · DeFi & Payments · RWA Tokenization
 
@@ -32,7 +34,7 @@ ALPHXC is a multi-agent autonomous FX settlement platform. Seven background agen
 │  │          │ │                 │  │ Routes open requests │        │
 │  │ Groq LLM │ │ AfroPay Corp    │  │ to pool @ market rate│        │
 │  │ SWAP/HOLD│ │ SilkRoad Exports│  │ logs SWAP + tx_hash  │        │
-│  │ decisions│ │ Treasury AI     │  │ every 10s            │        │
+│  │ decisions│ │ Treasury AI     │  │ every 35s            │        │
 │  └──────────┘ └─────────────────┘  └──────────────────────┘        │
 │                                                                      │
 │           ┌──────────────────────────┐                              ��
@@ -63,7 +65,7 @@ ALPHXC is a multi-agent autonomous FX settlement platform. Seven background agen
 | `alphxc-trader-a` | AfroPay Corp | Posts BUY EUR/USD, SELL USD/NGN (Africa↔Europe corridor) |
 | `alphxc-trader-b` | SilkRoad Exports | Posts SELL GBP/USD, BUY USD/JPY (Asia↔UK exports) |
 | `alphxc-trader-c` | Treasury AI | Posts USD/TRY, EUR/GBP hedge requests (corporate treasury) |
-| `alphxc-settler` | Settler | Settles every open trade request against pool within 20s, logs SWAP + Casper tx hash |
+| `alphxc-settler` | Settler | Settles every open trade request against pool within ~35s, logs SWAP + Casper tx hash |
 
 ---
 
@@ -87,7 +89,7 @@ ALPHXC is a multi-agent autonomous FX settlement platform. Seven background agen
 | **Agent Activity** (top right) | Latest 10 log lines from all 7 agents, colour-coded by agent |
 | **Trade Requests** (middle right) | Last 10 trade requests — OPEN → SETTLED with Casper explorer tx link |
 | **Swap Executions** (bottom right) | Last 10 settled swaps with confidence, spread %, and `↗ cspr.live` link |
-| **Wallet Connect** (header) | Connect Casper Wallet extension → submit your own BUY/SELL → agent settles within 20s |
+| **Wallet Connect** (header) | Connect Casper Wallet extension → submit your own BUY/SELL → agent settles within ~35s |
 
 ---
 
@@ -97,7 +99,7 @@ ALPHXC is a multi-agent autonomous FX settlement platform. Seven background agen
 2. Approve connection → your public key appears in the header
 3. Click **+ New Trade** → select pair, direction, amount
 4. Submit → your request appears in Trade Requests panel tagged `YOU`
-5. Settler agent picks it up and settles within ~20 seconds, posting a Casper tx hash
+5. Settler agent picks it up and settles within ~35 seconds, posting a Casper tx hash
 
 No CLI required — the wallet extension handles all signing client-side.
 

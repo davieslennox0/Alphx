@@ -79,7 +79,7 @@ export default function TradeForm({ publicKey, onClose, onSubmitted }) {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="text-sm font-semibold text-zinc-100">New Trade Request</h2>
-            <p className="text-xs text-zinc-600 mt-0.5">Agent will settle within ~20s</p>
+            <p className="text-xs text-zinc-600 mt-0.5">Settler agent executes on Casper testnet within ~35s</p>
           </div>
           <button onClick={onClose} className="text-zinc-600 hover:text-zinc-300 text-lg leading-none">×</button>
         </div>
@@ -99,7 +99,7 @@ export default function TradeForm({ publicKey, onClose, onSubmitted }) {
             <p className="text-xs text-zinc-500 mb-1">
               {result.direction} {result.pair} · {result.amount.toLocaleString()}
             </p>
-            <p className="text-xs text-zinc-600">req #{result.req_id} · settler picking up now</p>
+            <p className="text-xs text-zinc-600">req #{result.req_id} · Casper tx in ~35s</p>
             <button
               onClick={onClose}
               className="mt-4 px-4 py-1.5 text-xs rounded bg-zinc-800 border border-zinc-700 text-zinc-300 hover:bg-zinc-700 transition-colors"
@@ -183,7 +183,7 @@ export default function TradeForm({ publicKey, onClose, onSubmitted }) {
             </button>
 
             <p className="text-xs text-zinc-700 text-center mt-3">
-              Settler agent executes on Casper testnet within ~20s
+              Settler agent executes on Casper testnet within ~35s
             </p>
           </>
         )}

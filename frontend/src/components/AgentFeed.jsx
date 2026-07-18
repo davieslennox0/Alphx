@@ -22,8 +22,8 @@ export default function AgentFeed() {
   const bottomRef = useRef(null)
 
   useEffect(() => {
-    // Bootstrap: fetch recent logs via REST so we never start from id=0
     let lastId = 0
+    let intervalId = null
 
     const fetchRecent = async () => {
       try {
@@ -38,7 +38,6 @@ export default function AgentFeed() {
       } catch {}
     }
 
-    // Then poll for new entries only
     const poll = async () => {
       try {
         const r = await fetch(`${API_BASE}/agent/feed/since?after=${lastId}`)
@@ -53,9 +52,10 @@ export default function AgentFeed() {
     }
 
     fetchRecent().then(() => {
-      const id = setInterval(poll, 3000)
-      return () => clearInterval(id)
+      intervalId = setInterval(poll, 3000)
     })
+
+    return () => { if (intervalId) clearInterval(intervalId) }
   }, [])
 
   useEffect(() => {
