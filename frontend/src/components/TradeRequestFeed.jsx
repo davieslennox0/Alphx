@@ -41,7 +41,7 @@ export default function TradeRequestFeed() {
         const r = await fetch(`${API_BASE}/agent/trades/recent`)
         if (!r.ok) return
         const d = await r.json()
-        setTrades((d.trades || []).slice(-10))
+        setTrades((d.trades || []).slice(-20))
       } catch {}
     }
     fetch_()
@@ -73,8 +73,9 @@ export default function TradeRequestFeed() {
         )}
         {trades.map((t, i) => {
           const ac = AGENT_COLORS[t.agent] || { label: (t.agent||'').toUpperCase(), bg: 'bg-zinc-800', text: 'text-zinc-400' }
+          const isUser = t.agent === 'user'
           return (
-            <div key={t.id ?? i} className="px-1.5 py-1 rounded hover:bg-surface-2 border border-transparent hover:border-zinc-800">
+            <div key={t.id ?? i} className={`px-1.5 py-1 rounded border ${isUser ? 'border-yellow-900 bg-yellow-950/30' : 'border-transparent hover:bg-surface-2 hover:border-zinc-800'}`}>
               <div className="flex items-center gap-1.5 min-w-0">
                 <span className="text-zinc-700 shrink-0">{fmt(t.timestamp)}</span>
                 <span className={`shrink-0 px-1 rounded text-xs leading-4 ${ac.bg} ${ac.text}`}>{ac.label}</span>

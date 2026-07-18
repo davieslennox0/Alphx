@@ -45,7 +45,16 @@ export default function App() {
 
           {/* Brand */}
           <span className="text-sm font-bold text-zinc-100 tracking-tight whitespace-nowrap">ALPHXC</span>
-          <span className="text-xs text-zinc-600 whitespace-nowrap hidden lg:block">Autonomous FX Settlement · Casper</span>
+          <span className="text-xs text-zinc-600 whitespace-nowrap hidden lg:block">Autonomous FX Settlement</span>
+          <a
+            href="https://testnet.cspr.live"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hidden sm:flex items-center gap-1 px-2 h-5 rounded-full border border-red-800 bg-red-950/40 text-red-400 text-xs font-medium whitespace-nowrap hover:border-red-600 transition-colors shrink-0"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+            Casper Testnet
+          </a>
           <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse shrink-0" />
 
           {/* Separator */}
