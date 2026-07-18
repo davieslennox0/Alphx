@@ -17,7 +17,7 @@ POLL_INTERVAL = 60  # 1 minute
 SPREAD_THRESHOLD = 0.5  # percent
 MAX_LLM_CALLS_PER_CYCLE = 10  # top N opportunities evaluated by Groq per cycle
 GROQ_CALL_INTERVAL = 2.5  # seconds between Groq calls (free tier: ~30 rpm)
-GROQ_MODEL = "llama-3.3-70b-versatile"
+GROQ_MODEL = "llama-3.1-8b-instant"
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 
@@ -111,7 +111,7 @@ def simulate_pool_rate(real_rate: float) -> float:
 
 def run():
     init_db()
-    log_agent("aggregator", "Aggregator agent started (Groq brain: llama-3.3-70b-versatile)")
+    log_agent("aggregator", "Aggregator agent started (Groq brain: llama-3.1-8b-instant)")
 
     while True:
         try:

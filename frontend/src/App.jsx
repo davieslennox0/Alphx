@@ -67,7 +67,7 @@ export default function App() {
             <StatChip label="On-chain"  value={health?.total_onchain_tx != null ? `${health.total_onchain_tx.toLocaleString()} ⛓` : '…'} highlight={health?.total_onchain_tx > 0} />
             <StatChip label="Decisions" value={health?.total_decisions != null ? health.total_decisions.toLocaleString() : '…'} />
             <StatChip label="Updated"   value={health?.last_update ? new Date(health.last_update * 1000).toLocaleTimeString() : '—'} />
-            <StatChip label="LLM"       value="Groq llama-3.3-70b" />
+            <StatChip label="LLM"       value="Groq llama-3.1-8b" />
           </div>
 
           {/* Wallet — pinned right */}
