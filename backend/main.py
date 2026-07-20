@@ -277,6 +277,59 @@ async def trades_recent():
     return {"trades": get_recent_trade_requests(50)}
 
 
+@app.get("/agent/volume")
+async def agent_volume():
+    """Real settled notional volume — all-time and last 24h."""
+    import sqlite3
+    from backend.config import DB_PATH
+    since = int(time.time()) - 86400
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    r1 = conn.execute(
+        "SELECT SUM(amount) as vol, COUNT(*) as cnt FROM trade_requests WHERE status='SETTLED'"
+    ).fetchone()
+    r2 = conn.execute(
+        "SELECT SUM(amount) as vol, COUNT(*) as cnt FROM trade_requests "
+        "WHERE status='SETTLED' AND settled_at > ?", (since,)
+    ).fetchone()
+    conn.close()
+    return {
+        "total_notional":  float(r1["vol"] or 0),
+        "total_count":     int(r1["cnt"] or 0),
+        "volume_24h":      float(r2["vol"] or 0),
+        "count_24h":       int(r2["cnt"] or 0),
+    }
+
+
+@app.get("/agent/stats")
+async def agent_stats():
+    """Per-agent trade counts for today and all-time."""
+    import sqlite3
+    from backend.config import DB_PATH
+    since = int(time.time()) - 86400
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        "SELECT agent, COUNT(*) as today, SUM(1) as total FROM trade_requests "
+        "WHERE agent IN ('trader_a','trader_b','trader_c') "
+        "GROUP BY agent",
+    ).fetchall()
+    today_rows = conn.execute(
+        "SELECT agent, COUNT(*) as c FROM trade_requests "
+        "WHERE agent IN ('trader_a','trader_b','trader_c') AND timestamp > ? "
+        "GROUP BY agent",
+        (since,),
+    ).fetchall()
+    conn.close()
+    today_map = {r["agent"]: r["c"] for r in today_rows}
+    return {
+        "agents": [
+            {"agent": r["agent"], "today": today_map.get(r["agent"], 0), "total": r["total"]}
+            for r in rows
+        ]
+    }
+
+
 class UserTradeRequest(BaseModel):
     public_key: str
     pair: str
