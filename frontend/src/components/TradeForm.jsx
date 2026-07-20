@@ -8,7 +8,7 @@ const MAJOR_PAIRS = [
   'USD/MXN','USD/TRY','USD/ZAR','USD/NGN','USD/SGD','USD/HKD','USD/INR',
 ]
 
-export default function TradeForm({ publicKey, onClose, onSubmitted }) {
+export default function TradeForm({ publicKey, walletLabel = 'Casper Wallet', onClose, onSubmitted }) {
   const [pair, setPair]         = useState('EUR/USD')
   const [direction, setDir]     = useState('BUY')
   const [amount, setAmount]     = useState('')
@@ -88,7 +88,7 @@ export default function TradeForm({ publicKey, onClose, onSubmitted }) {
         <div className="flex items-center gap-2 mb-4 px-2 py-1.5 bg-zinc-900 rounded border border-zinc-800">
           <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
           <span className="text-xs text-zinc-400 font-mono">{short}</span>
-          <span className="ml-auto text-xs text-zinc-600">Casper Wallet</span>
+          <span className="ml-auto text-xs text-zinc-600">{walletLabel}</span>
         </div>
 
         {result ? (

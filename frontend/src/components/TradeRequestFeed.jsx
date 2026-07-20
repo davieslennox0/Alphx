@@ -12,17 +12,16 @@ const AGENT_COLORS = {
 }
 
 const STATUS_COLORS = {
-  OPEN:      'text-yellow-500',
-  SETTLED:   'text-green-400',
-  MATCHED:   'text-blue-400',
-  CANCELLED: 'text-red-400',
+  OPEN:       'text-yellow-500',
+  PROCESSING: 'text-orange-400',
+  SETTLED:    'text-green-400',
+  MATCHED:    'text-blue-400',
+  CANCELLED:  'text-red-400',
 }
 
 const DIR_COLORS = { BUY: 'text-green-400', SELL: 'text-red-400' }
 
-function fmt(ts) {
-  return new Date(ts * 1000).toTimeString().slice(0, 8)
-}
+function fmt(ts) { return new Date(ts * 1000).toTimeString().slice(0, 8) }
 
 function fmtAmt(n) {
   if (!n) return '—'
@@ -31,7 +30,7 @@ function fmtAmt(n) {
   return n.toFixed(0)
 }
 
-export default function TradeRequestFeed() {
+export default function TradeRequestFeed({ extraTrade }) {
   const [trades, setTrades] = useState([])
   const bottomRef = useRef(null)
 
@@ -49,12 +48,17 @@ export default function TradeRequestFeed() {
     return () => clearInterval(id)
   }, [])
 
+  // Merge simulated trade into display list
+  const displayTrades = extraTrade
+    ? [...trades.filter(t => t.id !== extraTrade.id), extraTrade].slice(-20)
+    : trades
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [trades])
+  }, [displayTrades])
 
-  const open     = trades.filter(t => t.status === 'OPEN').length
-  const settled  = trades.filter(t => t.status === 'SETTLED').length
+  const open    = displayTrades.filter(t => t.status === 'OPEN' || t.status === 'PROCESSING').length
+  const settled = displayTrades.filter(t => t.status === 'SETTLED').length
 
   return (
     <div className="flex flex-col h-full">
@@ -68,14 +72,22 @@ export default function TradeRequestFeed() {
       </div>
 
       <div className="flex-1 overflow-y-auto font-mono text-xs space-y-0.5">
-        {trades.length === 0 && (
+        {displayTrades.length === 0 && (
           <div className="text-zinc-700 py-2 text-center text-xs">Waiting for trade requests...</div>
         )}
-        {trades.map((t, i) => {
-          const ac = AGENT_COLORS[t.agent] || { label: (t.agent||'').toUpperCase(), bg: 'bg-zinc-800', text: 'text-zinc-400' }
+        {displayTrades.map((t, i) => {
+          const ac     = AGENT_COLORS[t.agent] || { label: (t.agent || '').toUpperCase(), bg: 'bg-zinc-800', text: 'text-zinc-400' }
           const isUser = t.agent === 'user'
+          const isProcessing = t.status === 'PROCESSING'
           return (
-            <div key={t.id ?? i} className={`px-1.5 py-1 rounded border ${isUser ? 'border-yellow-900 bg-yellow-950/30' : 'border-transparent hover:bg-surface-2 hover:border-zinc-800'}`}>
+            <div
+              key={t.id ?? i}
+              className={`px-1.5 py-1 rounded border ${
+                isUser
+                  ? 'border-yellow-900 bg-yellow-950/30'
+                  : 'border-transparent hover:bg-surface-2 hover:border-zinc-800'
+              }`}
+            >
               <div className="flex items-center gap-1.5 min-w-0">
                 <span className="text-zinc-700 shrink-0">{fmt(t.timestamp)}</span>
                 <span className={`shrink-0 px-1 rounded text-xs leading-4 ${ac.bg} ${ac.text}`}>{ac.label}</span>
@@ -83,22 +95,24 @@ export default function TradeRequestFeed() {
                 <span className="text-zinc-200 shrink-0">{t.pair}</span>
                 <span className="text-zinc-500 shrink-0">{fmtAmt(t.amount)}</span>
                 <span className="flex-1" />
+                {isProcessing && <span className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse shrink-0" />}
                 <span className={`shrink-0 text-xs ${STATUS_COLORS[t.status] || 'text-zinc-500'}`}>{t.status}</span>
               </div>
               {t.status === 'SETTLED' && t.tx_hash && (
                 <div className="pl-1 mt-0.5 flex items-center gap-1 flex-wrap">
-                  <span className="text-zinc-700 text-xs">{t.pair ? t.pair.replace('/', '') : 'FX'} token swap:</span>
+                  <span className="text-zinc-700 text-xs">{t.pair ? t.pair.replace('/', '') : 'FX'} swap:</span>
                   {t.tx_hash.startsWith('local-') ? (
-                    <span className="text-zinc-600 text-xs font-mono">{t.tx_hash.slice(6, 18)}… (local ref)</span>
+                    <span className="text-zinc-600 text-xs font-mono">{t.tx_hash.slice(6, 14)}… (local)</span>
                   ) : (
                     <>
                       <a
                         href={`${EXPLORER}/${t.tx_hash}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-blue-400 hover:text-blue-300 underline underline-offset-2 text-xs"
+                        className="text-green-400 hover:text-green-300 underline underline-offset-2 text-xs font-mono"
+                        title={t.tx_hash}
                       >
-                        {t.tx_hash.slice(0, 12)}…{t.tx_hash.slice(-6)}
+                        {t.tx_hash.slice(0, 8)}…
                       </a>
                       <span className="text-zinc-700 text-xs">↗ cspr.live</span>
                     </>

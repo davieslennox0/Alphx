@@ -36,3 +36,24 @@ body {
 
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+@keyframes fadeInDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in-down { animation: fadeInDown 300ms ease both; }
+
+@keyframes flashSettled {
+  0%   { background-color: rgba(34,197,94,0.25); }
+  100% { background-color: transparent; }
+}
+.flash-settled { animation: flashSettled 1.2s ease both; }
+
+@keyframes dashMove { to { stroke-dashoffset: -24; } }
+.animate-dash { animation: dashMove 1.5s linear infinite; }
+
+@keyframes countUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-count-up { animation: countUp 0.5s ease both; }
