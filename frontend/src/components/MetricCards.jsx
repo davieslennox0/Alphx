@@ -1,7 +1,3 @@
-import { useState, useEffect } from 'react'
-
-const API_BASE = import.meta.env.VITE_API_URL || ''
-
 function fmtDollars(n) {
   if (n == null) return '…'
   if (n >= 1e9) return `$${(n / 1e9).toFixed(2)}B`
@@ -11,32 +7,19 @@ function fmtDollars(n) {
 }
 
 export default function MetricCards({ health }) {
-  const [volume, setVolume] = useState(null)
-
-  useEffect(() => {
-    fetch(`${API_BASE}/agent/volume`)
-      .then(r => r.json())
-      .then(setVolume)
-      .catch(() => {})
-    const id = setInterval(() => {
-      fetch(`${API_BASE}/agent/volume`).then(r => r.json()).then(setVolume).catch(() => {})
-    }, 30000)
-    return () => clearInterval(id)
-  }, [])
-
   const CARDS = [
     {
       label:  'Total Value Settled',
-      value:  fmtDollars(volume?.total_notional),
-      sub:    volume ? `${volume.total_count.toLocaleString()} settlements all-time` : 'Loading…',
+      value:  fmtDollars(health?.volume_total),
+      sub:    health ? `${health.total_settled.toLocaleString()} settlements all-time` : 'Loading…',
       border: 'border-t-green-500',
       color:  'text-green-400',
       arrow:  true,
     },
     {
       label:  '24h Trading Volume',
-      value:  fmtDollars(volume?.volume_24h),
-      sub:    volume ? `${volume.count_24h.toLocaleString()} trades today` : 'Loading…',
+      value:  fmtDollars(health?.volume_24h),
+      sub:    health ? `${health.swaps_executed.toLocaleString()} trades today` : 'Loading…',
       border: 'border-t-blue-500',
       color:  'text-blue-400',
       arrow:  true,

@@ -202,6 +202,25 @@ def count_total_decisions() -> int:
         return row["c"]
 
 
+def volume_24h() -> float:
+    since = int(time.time()) - 86400
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT COALESCE(SUM(amount), 0) as v FROM trade_requests "
+            "WHERE status='SETTLED' AND settled_at > ?", (since,)
+        ).fetchone()
+        return float(row["v"])
+
+
+def volume_total() -> float:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT COALESCE(SUM(amount), 0) as v FROM trade_requests "
+            "WHERE status='SETTLED'"
+        ).fetchone()
+        return float(row["v"])
+
+
 def post_trade_request(
     agent: str, agent_name: str, pair: str, direction: str,
     amount: float, rate_limit: float | None = None
