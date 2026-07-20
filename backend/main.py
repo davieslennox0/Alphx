@@ -51,7 +51,7 @@ async def health():
         "total_settled": count_total_settled(),
         "total_onchain_tx": count_onchain_tx(),
         "total_decisions": count_total_decisions(),
-        "volume_24h": volume_24h(),
+        **dict(zip(("volume_24h", "count_24h"), volume_24h())),
         "volume_total": volume_total(),
     }
 

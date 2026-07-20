@@ -19,7 +19,7 @@ export default function MetricCards({ health }) {
     {
       label:  '24h Trading Volume',
       value:  fmtDollars(health?.volume_24h),
-      sub:    health ? `${health.swaps_executed.toLocaleString()} trades today` : 'Loading…',
+      sub:    health ? `${(health.count_24h ?? health.swaps_executed ?? 0).toLocaleString()} trades today` : 'Loading…',
       border: 'border-t-blue-500',
       color:  'text-blue-400',
       arrow:  true,

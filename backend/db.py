@@ -202,14 +202,14 @@ def count_total_decisions() -> int:
         return row["c"]
 
 
-def volume_24h() -> float:
+def volume_24h() -> tuple[float, int]:
     since = int(time.time()) - 86400
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT COALESCE(SUM(amount), 0) as v FROM trade_requests "
+            "SELECT COALESCE(SUM(amount), 0) as v, COUNT(*) as c FROM trade_requests "
             "WHERE status='SETTLED' AND settled_at > ?", (since,)
         ).fetchone()
-        return float(row["v"])
+        return float(row["v"]), int(row["c"])
 
 
 def volume_total() -> float:
