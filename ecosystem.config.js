@@ -1,6 +1,16 @@
 module.exports = {
   apps: [
     {
+      name: 'alphxc-cspr-trade-mcp',
+      script: 'node_modules/.bin/cspr-trade-mcp',
+      cwd: '/root/alphx/cspr-trade-mcp',
+      env: {
+        CSPR_TRADE_NETWORK: 'testnet',
+        CSPR_TRADE_TRANSPORT: 'http',
+        CSPR_TRADE_PORT: '3001',
+      },
+    },
+    {
       name: 'alphxc-api',
       script: 'python3',
       args: '-m uvicorn backend.main:app --host 0.0.0.0 --port 8400',

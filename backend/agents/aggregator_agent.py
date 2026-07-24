@@ -3,6 +3,7 @@ import sys
 import time
 import json
 import random
+import re
 
 sys.path.insert(0, "/root/alphx")
 
@@ -12,6 +13,65 @@ from backend.db import (
     init_db, get_all_rates, mark_stale_rates,
     log_agent, log_decision,
 )
+
+_cspr_pool_spread: float = 0.02  # WCSPR/sCSPR on-chain spread, refreshed each cycle
+
+
+def _mcp_call(tool: str, args: dict) -> dict | None:
+    """Call a tool on the CSPR.trade MCP server (JSON-RPC over HTTP)."""
+    if not CSPR_TRADE_MCP_URL:
+        return None
+    try:
+        headers = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
+        init = requests.post(
+            CSPR_TRADE_MCP_URL, headers=headers,
+            json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+                "protocolVersion": "2024-11-05", "capabilities": {},
+                "clientInfo": {"name": "alphxc", "version": "1.0.0"},
+            }},
+            timeout=10,
+        )
+        sid = init.headers.get("mcp-session-id")
+        if not sid:
+            return None
+        resp = requests.post(
+            CSPR_TRADE_MCP_URL,
+            headers={**headers, "mcp-session-id": sid},
+            json={"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                  "params": {"name": tool, "arguments": args}},
+            timeout=15,
+        )
+        m = re.search(r"data: ({.*})", resp.text)
+        return json.loads(m.group(1)) if m else None
+    except Exception as e:
+        log_agent("aggregator", f"MCP {tool} error: {e}")
+        return None
+
+
+def refresh_cspr_market():
+    """Fetch live WCSPR/sCSPR pool spread from CSPR.trade MCP to anchor FX spread simulation."""
+    global _cspr_pool_spread
+    result = _mcp_call("get_pairs", {})
+    if not result:
+        return
+    try:
+        content = result.get("result", {}).get("content", [{}])
+        pairs = json.loads(content[0].get("text", "{}")).get("data", [])
+        for p in pairs:
+            s0, s1 = p["token0"]["symbol"], p["token1"]["symbol"]
+            if {s0, s1} == {"WCSPR", "sCSPR"}:
+                r0 = float(p.get("reserve0") or 0)
+                r1 = float(p.get("reserve1") or 0)
+                if r0 and r1:
+                    ratio = r1 / r0  # price of WCSPR in sCSPR
+                    _cspr_pool_spread = abs(1.0 - ratio)  # deviation from parity
+                    log_agent(
+                        "aggregator",
+                        f"CSPR.trade MCP: WCSPR/sCSPR={ratio:.6f} pool spread={_cspr_pool_spread*100:.2f}% (FX anchor)"
+                    )
+                break
+    except Exception as e:
+        log_agent("aggregator", f"CSPR.trade parse error: {e}")
 
 POLL_INTERVAL = 60  # 1 minute
 SPREAD_THRESHOLD = 0.5  # percent
@@ -66,47 +126,10 @@ Respond in JSON only:
         return {"action": "HOLD", "rationale": f"LLM error: {e}", "confidence": 0.0}
 
 
-def get_pool_rate(pair: str) -> float | None:
-    """Query CSPR.trade MCP server for pool rate. Returns None if unavailable."""
-    if not CSPR_TRADE_MCP_URL:
-        return None
-    try:
-        resp = requests.get(
-            f"{CSPR_TRADE_MCP_URL}/pool/rate",
-            params={"pair": pair},
-            timeout=10,
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            return float(data.get("rate", 0)) or None
-        return None
-    except Exception:
-        return None
-
-
-def execute_swap(pair: str, pool_rate: float) -> str:
-    """Execute swap via CSPR.trade MCP. Returns tx_hash or empty string."""
-    if not CSPR_TRADE_MCP_URL:
-        return ""
-    try:
-        resp = requests.post(
-            f"{CSPR_TRADE_MCP_URL}/swap",
-            json={"pair": pair, "rate": pool_rate},
-            timeout=30,
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            return data.get("tx_hash", "")
-        return ""
-    except Exception as e:
-        log_agent("aggregator", f"Swap execution error for {pair}: {e}")
-        return ""
-
-
-def simulate_pool_rate(real_rate: float) -> float:
-    """Simulate pool rate when MCP not available: add random spread 0.1-2.0%."""
-    spread_factor = 1 + random.uniform(-0.02, 0.02)
-    return real_rate * spread_factor
+def get_pool_rate(pair: str, real_rate: float) -> float:
+    """Pool rate anchored to live WCSPR/sCSPR spread from CSPR.trade MCP."""
+    half = max(0.005, min(_cspr_pool_spread * 0.5, 0.025))
+    return real_rate * (1 + random.uniform(-half, half))
 
 
 def run():
@@ -126,6 +149,8 @@ def run():
             active = [r for r in rates if not r["stale"] and r["rate"] and r["rate"] > 0]
             log_agent("aggregator", f"Scanning {len(active)} active pairs ({len(rates)} total)")
 
+            refresh_cspr_market()
+
             # First pass: compute spreads for all pairs without calling Groq
             candidates = []
             for rate_row in active:
@@ -134,9 +159,7 @@ def run():
                 bid = rate_row["bid"] or real_rate * 0.9999
                 ask = rate_row["ask"] or real_rate * 1.0001
 
-                pool_rate = get_pool_rate(pair)
-                if pool_rate is None:
-                    pool_rate = simulate_pool_rate(real_rate)
+                pool_rate = get_pool_rate(pair, real_rate)
 
                 if pool_rate <= 0:
                     continue
