@@ -132,6 +132,13 @@ def get_pool_rate(pair: str, real_rate: float) -> float:
     return real_rate * (1 + random.uniform(-half, half))
 
 
+def execute_swap(pair: str, rate: float) -> str:
+    """Log a swap intent; CSPR.trade MCP is read-only so returns a sim hash."""
+    import hashlib, time
+    seed = f"{pair}{rate}{time.time()}".encode()
+    return "sim-" + hashlib.sha256(seed).hexdigest()[:16]
+
+
 def run():
     init_db()
     log_agent("aggregator", "Aggregator agent started (Groq brain: llama-3.1-8b-instant)")
